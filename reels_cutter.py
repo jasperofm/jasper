@@ -234,6 +234,10 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="only print the chosen moments")
     a = ap.parse_args()
 
+    import shutil
+    for tool in ("ffmpeg", "ffprobe"):
+        if not shutil.which(tool):
+            sys.exit(f"{tool} is not installed. On a Mac run: brew install ffmpeg  (get Homebrew at https://brew.sh first if 'brew' is not found)")
     video = Path(a.video)
     if not video.exists():
         sys.exit(f"Not found: {video}")
