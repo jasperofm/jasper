@@ -12,7 +12,17 @@ Turns one long video you own into several **different** vertical (1080x1920) Ree
 1. Install **ffmpeg**: `brew install ffmpeg` (Mac), `winget install ffmpeg` (Windows) or `sudo apt install ffmpeg` (Linux).
 2. Install Python 3.9+ and then: `pip install faster-whisper`
 
-## Run it
+## Mac app (easiest)
+
+After the setup above, run this once inside the `jasper` folder:
+
+```bash
+bash mac/make_mac_app.sh
+```
+
+That puts **Reels Cutter** in your Applications folder. Open it, or drag a video onto its icon, then choose how many Reels you want and the layout. A Terminal window shows the progress, and the finished Reels' folder opens on its own when it's done.
+
+## Run it from Terminal
 
 ```bash
 python reels_cutter.py my_video.mp4                         # 5 Reels, 15-90s, saved in my_video_reels/
