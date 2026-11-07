@@ -23,6 +23,22 @@ from pathlib import Path
 
 W, H = 1080, 1920
 
+
+def find_ffmpeg():
+    """System ffmpeg if installed, otherwise the one bundled with `pip install imageio-ffmpeg`."""
+    import shutil
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        sys.exit("ffmpeg not found. Run: pip3 install imageio-ffmpeg")
+
+
+FFMPEG = None
+
 HOOK_WORDS = {
     "secret", "mistake", "mistakes", "never", "always", "stop", "why", "how",
     "best", "worst", "truth", "nobody", "everyone", "actually", "real", "wrong",
@@ -45,7 +61,7 @@ def transcribe(video, model_name, language, cache_path):
     # Decode audio with ffmpeg ourselves: newer PyAV releases break faster-whisper's own decoder.
     import numpy as np
     pcm = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+        [FFMPEG, "-v", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
         capture_output=True, check=True,
     ).stdout
     audio = np.frombuffer(pcm, np.int16).astype(np.float32) / 32768.0
@@ -66,11 +82,9 @@ def transcribe(video, model_name, language, cache_path):
 
 
 def video_duration(video):
-    r = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)],
-        capture_output=True, text=True, check=True,
-    )
-    return float(r.stdout.strip())
+    import av  # installed with faster-whisper
+    with av.open(str(video)) as c:
+        return c.duration / 1_000_000
 
 
 # ---------------------------------------------------------------- picking moments
@@ -206,7 +220,7 @@ def render(video, out_dir, name, start, end, ass_name, layout, crf):
         vf = (f"split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
               f"boxblur=30:3[bg];[b]scale={W}:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,ass={ass_name}")
     cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
         "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", str(Path(video).resolve()),
         "-filter_complex", vf, "-r", "30",
         "-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-pix_fmt", "yuv420p",
@@ -234,10 +248,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="only print the chosen moments")
     a = ap.parse_args()
 
-    import shutil
-    for tool in ("ffmpeg", "ffprobe"):
-        if not shutil.which(tool):
-            sys.exit(f"{tool} is not installed. On a Mac run: brew install ffmpeg  (get Homebrew at https://brew.sh first if 'brew' is not found)")
+    global FFMPEG
+    FFMPEG = find_ffmpeg()
     video = Path(a.video)
     if not video.exists():
         sys.exit(f"Not found: {video}")

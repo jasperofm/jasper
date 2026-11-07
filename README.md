@@ -9,7 +9,7 @@ Turns one long video you own into several **different** vertical (1080x1920) Ree
 
 ## Setup (once)
 
-1. Install **ffmpeg**: `brew install ffmpeg` (Mac), `winget install ffmpeg` (Windows) or `sudo apt install ffmpeg` (Linux).
+1. ffmpeg comes with the Python packages below. If you already have ffmpeg installed (e.g. `brew install ffmpeg`), that one is used.
 2. Install Python 3.9+ and then: `pip install faster-whisper`
 
 ## Mac app (easiest)
