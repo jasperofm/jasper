@@ -158,6 +158,131 @@ def make_hook(text, max_words=9):
     return hook.upper()
 
 
+# ---------------------------------------------------------------- AI picking (optional)
+def load_api_key():
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    f = Path.home() / ".reels_cutter_key"
+    if not key and f.exists():
+        key = f.read_text().strip()
+    return key
+
+
+def ai_pick(segs, count, lo, hi, used, api_key):
+    """Ask Claude for the most engaging moments + hooks + post captions. Returns [] on any failure."""
+    try:
+        import anthropic
+    except ImportError:
+        print("  (AI picking skipped: run  pip3 install anthropic)")
+        return []
+    lines = [f"[{i}] {s['start']:.1f}-{s['end']:.1f}s: {s['text']}" for i, s in enumerate(segs)]
+    used_txt = ", ".join(f"{a:.0f}-{b:.0f}s" for a, b in used) or "none"
+    prompt = f"""Here is a timestamped transcript of a long video, one numbered segment per line.
+
+<transcript>
+{chr(10).join(lines)}
+</transcript>
+
+Pick the {count} most engaging, self-contained moments to post as Instagram Reels. Each moment is a run of consecutive segments (start_seg to end_seg, inclusive) lasting between {lo:.0f} and {hi:.0f} seconds, and should make sense to someone who hasn't seen the rest of the video: it opens strong and ends on a complete thought. Prefer a mix of lengths. Moments must not overlap each other or these already-used time ranges: {used_txt}.
+
+For each moment also write:
+- hook: a short on-screen title (max 8 words) that makes people stop scrolling, true to what is said
+- caption: an Instagram post caption (1-3 short sentences, may end with a question to drive comments)
+- hashtags: 5 relevant hashtags without the # sign
+
+Reply with only JSON in this shape:
+{{"clips": [{{"start_seg": 0, "end_seg": 5, "hook": "...", "caption": "...", "hashtags": ["..."]}}]}}"""
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.beta.messages.create(
+            model="claude-opus-5-5",
+            max_tokens=16000,
+            betas=["server-side-fallback-2026-07-01"],
+            extra_body={"fallbacks": "default", "output_config": {"effort": "medium"}},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if resp.stop_reason == "refusal":
+            print("  (AI picking declined; using built-in picker)")
+            return []
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        data = json.loads(text[text.index("{"):text.rindex("}") + 1])
+    except Exception as e:
+        print(f"  (AI picking failed: {e}; using built-in picker)")
+        return []
+    chosen, blocked = [], [{"start": a, "end": b} for a, b in used]
+    for c in data.get("clips", []):
+        try:
+            i, j = int(c["start_seg"]), int(c["end_seg"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if not (0 <= i <= j < len(segs)):
+            continue
+        st, en = segs[i]["start"], segs[j]["end"]
+        if not (lo - 1 <= en - st <= hi + 3):
+            continue
+        if any(not (en + 1 <= p["start"] or st >= p["end"] + 1) for p in chosen + blocked):
+            continue
+        tags = [t.strip().lstrip("#").replace(" ", "") for t in c.get("hashtags", []) if str(t).strip()]
+        chosen.append({"i": i, "j": j, "start": st, "end": en, "dur": en - st, "score": 99,
+                       "hook": str(c.get("hook", "")).strip().upper()[:70],
+                       "caption": str(c.get("caption", "")).strip(), "hashtags": tags[:8]})
+        if len(chosen) == count:
+            break
+    return chosen
+
+
+STOPWORDS = set("""the and that this with have from your what when they them then there their about would could should
+just like really because which while where these those into over than also some more most very been were will being
+going gonna wanna thing things people know think want make right okay yeah well here even only other after before""".split())
+
+
+def post_caption(hook, text, tags=None):
+    """Instagram caption + hashtags. Uses the AI's when given, else builds one from the transcript."""
+    if not tags:
+        words = [w for w in re.findall(r"[a-zA-Z]{5,}", text.lower()) if w not in STOPWORDS]
+        top = sorted(set(words), key=lambda w: -words.count(w))[:4]
+        tags = top + ["reels", "explore"]
+    first = re.split(r"(?<=[.!?])\s+", text.strip())[:2]
+    body = text if len(" ".join(first)) < 20 else " ".join(first)
+    return f"{body}\n\n" + " ".join("#" + t.lower() for t in tags)
+
+
+# ---------------------------------------------------------------- face tracking (optional)
+def face_center(video, start, end):
+    """Median horizontal face position (0..1) in this part of the video, or None."""
+    try:
+        return _face_center(video, start, end)
+    except Exception as e:
+        print(f"  (face tracking unavailable: {e})")
+        return None
+
+
+def _face_center(video, start, end):
+    try:
+        import cv2
+    except ImportError:
+        return None
+    cap = cv2.VideoCapture(str(video))
+    det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    xs = []
+    steps = max(1, min(40, int((end - start) / 0.5)))
+    for k in range(steps):
+        cap.set(cv2.CAP_PROP_POS_MSEC, (start + (end - start) * k / steps) * 1000)
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        h, w = frame.shape[:2]
+        small = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (w * 360 // h, 360))
+        faces = det.detectMultiScale(small, 1.1, 5, minSize=(30, 30))
+        if len(faces):
+            x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+            xs.append((x + fw / 2) / small.shape[1])
+    cap.release()
+    if len(xs) < max(2, steps // 4):
+        return None
+    xs.sort()
+    return xs[len(xs) // 2]
+
+
 # ---------------------------------------------------------------- jump cuts
 def keep_ranges(words, clip_start, clip_end, max_pause=0.35, pad=0.08):
     """Spans (relative to clip start) that contain speech; pauses longer than max_pause are cut."""
@@ -192,11 +317,21 @@ def ass_time(t):
     return f"{h}:{m:02d}:{s:05.2f}"
 
 
+# name: (fontsize, text colour, highlight colour, outline colour, back colour, border style, outline, shadow, marginV)
+STYLES = {
+    "classic": (84, "&H00FFFFFF", "&H0000FFFF", "&H00000000", "&H64000000", 1, 6, 2, 520),
+    "bold":    (104, "&H00FFFFFF", "&H0000FF00", "&H00000000", "&H00000000", 1, 9, 0, 560),
+    "boxed":   (76, "&H00FFFFFF", "&H0000D7FF", "&H00000000", "&H50000000", 3, 14, 0, 520),
+    "minimal": (64, "&H00FFFFFF", "&H00FFFFFF", "&H00000000", "&H80000000", 1, 2, 1, 380),
+}
+
+
 def ass_escape(s):
     return s.replace("\\", "").replace("{", "(").replace("}", ")")
 
 
-def write_ass(path, words, clip_start, clip_end, hook, hook_secs, font, chunk=3, ranges=None):
+def write_ass(path, words, clip_start, clip_end, hook, hook_secs, font, chunk=3, ranges=None, style="classic"):
+    fs, col, hi_col, out_col, back, border, outl, shad, mv = STYLES.get(style, STYLES["classic"])
     if ranges is None:
         ranges = [(0.0, clip_end - clip_start)]
     rt = lambda t: remap(t - clip_start, ranges)
@@ -208,7 +343,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{font},84,&H00FFFFFF,&H0000FFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,6,2,2,80,80,520,1
+Style: Cap,{font},{fs},{col},{hi_col},{out_col},{back},-1,0,0,0,100,100,0,0,{border},{outl},{shad},2,80,80,{mv},1
 Style: Hook,{font},78,&H00000000,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,24,0,8,90,90,260,1
 
 [Events]
@@ -234,7 +369,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             st = w["start"]
             en = group[idx + 1]["start"] if idx + 1 < len(group) else g_end
             txt = " ".join(
-                ("{\\c&H0000FFFF&}" + ass_escape(x["word"].upper()) + "{\\c&H00FFFFFF&}") if n == idx
+                ("{\\c" + hi_col + "&}" + ass_escape(x["word"].upper()) + "{\\c" + col + "&}") if n == idx
                 else ass_escape(x["word"].upper())
                 for n, x in enumerate(group)
             )
@@ -254,9 +389,10 @@ LOOKS = {
 
 
 def render(video, out_dir, name, start, end, ass_name, layout, crf, ranges=None, look="none", enhance=True,
-           title="", description=""):
+           title="", description="", face_x=None, music=None):
     pre = "fps=30"
     apre = "anull"
+    norm = "loudnorm=I=-14:TP=-1.5:LRA=11"   # Instagram-friendly loudness, consistent between Reels
     if ranges:
         expr = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in ranges)
         pre += f",select='{expr}',setpts=N/30/TB"
@@ -269,17 +405,26 @@ def render(video, out_dir, name, start, end, ass_name, layout, crf, ranges=None,
     post.append(f"setsar=1,ass={ass_name}")
     post = ",".join(post)
     if layout == "crop":
-        vf = f"[0:v]{pre},scale=-2:{H},crop={W}:{H},{post}[v]"
+        cx = "(iw-ow)/2" if face_x is None else f"max(0\\,min(iw-ow\\,iw*{face_x:.3f}-ow/2))"
+        vf = f"[0:v]{pre},scale=-2:{H}:flags=lanczos,crop={W}:{H}:{cx}:0,{post}[v]"
     else:  # blur: whole frame fitted, blurred copy fills the background
         vf = (f"[0:v]{pre},split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
               f"boxblur=30:3[bg];[b]scale={W}:-2:flags=lanczos[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,{post}[v]")
-    vf += f";[0:a]{apre}[a]"
+    inputs = ["-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", str(Path(video).resolve())]
+    if music:
+        # music loops under the voice and ducks whenever someone talks
+        inputs += ["-stream_loop", "-1", "-i", str(Path(music).resolve())]
+        vf += (f";[0:a]{apre},{norm},asplit[v1][v2];[1:a]aresample=48000,volume=0.22[m];"
+               f"[m][v2]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[duck];"
+               f"[v1][duck]amix=inputs=2:duration=first:normalize=0[a]")
+    else:
+        vf += f";[0:a]{apre},{norm}[a]"
     cmd = [
-        FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
-        "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", str(Path(video).resolve()),
+        FFMPEG, "-y", "-hide_banner", "-loglevel", "error", *inputs,
         "-filter_complex", vf, "-map", "[v]", "-map", "[a]", "-r", "30",
         "-c:v", "libx264", "-preset", "slow", "-crf", str(crf), "-pix_fmt", "yuv420p",
-        "-profile:v", "high", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-profile:v", "high", "-level", "4.2", "-x264-params", "aq-mode=3:deblock=-1,-1",
+        "-maxrate", "25M", "-bufsize", "50M", "-c:a", "aac", "-b:a", "256k", "-ar", "48000",
         "-metadata", f"title={title}", "-metadata", f"comment={description}",
         "-metadata", f"description={description}", "-movflags", "+faststart", name,
     ]
@@ -303,6 +448,8 @@ def write_gallery(library):
             src = f"{folder}/{r['file']}"
             cards.append(f"""<figure><video src="{html.escape(src)}" controls preload="metadata" playsinline></video>
 <figcaption><b>{html.escape(r['hook'])}</b><span>{html.escape(folder)} · {r['length']:.0f}s · from {r['source_start']:.0f}s</span>
+<details><summary>Post caption</summary><textarea readonly>{html.escape(r.get('post_caption', ''))}</textarea>
+<button onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent='Copied'">Copy caption</button></details>
 <details><summary>Transcript</summary><p>{html.escape(r['transcript'])}</p></details>
 <a href="{html.escape(src)}" download>Download</a></figcaption></figure>""")
     page = f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -311,7 +458,9 @@ body{{margin:0;background:#111;color:#eee;font:15px -apple-system,Helvetica,sans
 h1{{margin:0 0 20px}}main{{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px}}
 figure{{margin:0;background:#1c1c1c;border-radius:14px;overflow:hidden}}video{{width:100%;aspect-ratio:9/16;background:#000;display:block}}
 figcaption{{padding:12px;display:flex;flex-direction:column;gap:6px}}span{{color:#999;font-size:13px}}
-a{{color:#7cf}}details p{{color:#bbb;font-size:13px}}
+a{{color:#7cf}}details p{{color:#bbb;font-size:13px}}summary{{cursor:pointer}}
+textarea{{width:100%;box-sizing:border-box;height:110px;background:#111;color:#eee;border:1px solid #333;border-radius:8px;padding:8px;font:13px -apple-system,sans-serif;margin-top:6px}}
+button{{margin-top:6px;background:#7cf;color:#000;border:0;border-radius:8px;padding:6px 10px;font-weight:600;cursor:pointer}}
 </style></head><body><h1>My Reels ({len(cards)})</h1><main>{''.join(cards) or '<p>No Reels yet.</p>'}</main></body></html>"""
     path = library / "gallery.html"
     path.write_text(page, encoding="utf-8")
@@ -336,10 +485,15 @@ def main():
     ap.add_argument("--hooks", default=None, help="text file with your own hook lines, one per Reel")
     ap.add_argument("--hook-seconds", type=float, default=3.0)
     ap.add_argument("--font", default="Arial")
-    ap.add_argument("--crf", type=int, default=18, help="quality, lower = better/bigger (default 18)")
+    ap.add_argument("--crf", type=int, default=16, help="quality, lower = better/bigger (default 16, very high)")
     ap.add_argument("--look", choices=list(LOOKS), default="none", help="color look: none/warm/cool/punchy/bw")
     ap.add_argument("--no-jumpcuts", action="store_true", help="keep pauses instead of cutting them out")
     ap.add_argument("--no-enhance", action="store_true", help="skip denoise + sharpen")
+    ap.add_argument("--style", choices=list(STYLES), default="classic", help="caption style")
+    ap.add_argument("--music", default=None,
+                    help="music file or folder (default: <library>/music if it exists); 'none' to turn off")
+    ap.add_argument("--no-ai", action="store_true", help="don't use Claude to pick moments even if a key is set")
+    ap.add_argument("--no-face", action="store_true", help="center the crop instead of following faces")
     ap.add_argument("--dry-run", action="store_true", help="only print the chosen moments")
     a = ap.parse_args()
 
@@ -367,7 +521,25 @@ def main():
     used = [(r["source_start"], r["source_end"]) for r in old]
     if used:
         print(f"{len(used)} Reels already made from this video; picking new moments.")
-    clips = pick_clips(segs, a.count, a.min, a.max, used=used)
+    clips = []
+    key = "" if a.no_ai else load_api_key()
+    if key:
+        print("Asking Claude to pick the best moments...")
+        clips = ai_pick(segs, a.count, a.min, a.max, used, key)
+        print(f"  Claude picked {len(clips)} moments.")
+    if len(clips) < a.count:
+        more = pick_clips(segs, a.count - len(clips), a.min, a.max,
+                          used=used + [(c["start"], c["end"]) for c in clips])
+        clips = sorted(clips + more, key=lambda c: c["start"])
+
+    tracks = []
+    music_src = a.music if a.music else str(library / "music")
+    if music_src.lower() != "none" and Path(music_src).expanduser().exists():
+        mp = Path(music_src).expanduser()
+        tracks = sorted(mp.glob("*")) if mp.is_dir() else [mp]
+        tracks = [t for t in tracks if t.suffix.lower() in (".mp3", ".m4a", ".wav", ".aac", ".flac", ".ogg")]
+        if tracks:
+            print(f"Background music: {len(tracks)} track(s) from {mp}")
     if not clips:
         print("No unused moments left in this video. Try a lower --min, or a new video.")
     custom_hooks = []
@@ -381,7 +553,8 @@ def main():
         words = [w for s in clip_segs for w in s["words"]]
         start = max(0.0, c["start"] - 0.15)
         end = min(total, c["end"] + 0.35)
-        hook = custom_hooks[n - first] if n - first < len(custom_hooks) else make_hook(clip_segs[0]["text"])
+        hook = (custom_hooks[n - first] if n - first < len(custom_hooks)
+                else c.get("hook") or make_hook(clip_segs[0]["text"]))
         ranges = None if a.no_jumpcuts else keep_ranges(words, start, end)
         final_len = sum(b - x for x, b in ranges) if ranges else end - start
         name = f"reel_{n:02d}_{int(final_len)}s.mp4"
@@ -392,13 +565,25 @@ def main():
             "file": name, "source_start": round(start, 2), "source_end": round(end, 2),
             "length": round(final_len, 1), "hook": hook,
             "transcript": " ".join(s["text"] for s in clip_segs),
+            "picked_by": "claude" if c.get("score") == 99 else "built-in",
         })
+        if c.get("caption"):
+            manifest[-1]["post_caption"] = post_caption(hook, c["caption"], c.get("hashtags"))
+        else:
+            manifest[-1]["post_caption"] = post_caption(hook, manifest[-1]["transcript"])
         if a.dry_run:
             continue
-        write_ass(out / ass_name, words, start, end, hook, a.hook_seconds, a.font, ranges=ranges)
+        face_x = None
+        if a.layout == "crop" and not a.no_face:
+            face_x = face_center(video, start, end)
+            print("  following face" if face_x is not None else "  no face found, centered crop")
+        music = tracks[(n - 1) % len(tracks)] if tracks else None
+        write_ass(out / ass_name, words, start, end, hook, a.hook_seconds, a.font, ranges=ranges, style=a.style)
         render(video, out, name, start, end, ass_name, a.layout, a.crf,
                ranges=ranges, look=a.look, enhance=not a.no_enhance,
-               title=hook.title(), description=manifest[-1]["transcript"][:250])
+               title=hook.title(), description=manifest[-1]["transcript"][:250],
+               face_x=face_x, music=music)
+        (out / name.replace(".mp4", "_caption.txt")).write_text(manifest[-1]["post_caption"], encoding="utf-8")
         print(f"  wrote {out / name}")
 
     if not a.dry_run:

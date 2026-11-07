@@ -10,6 +10,12 @@ Turns one long video you own into several **different** vertical (1080x1920) Ree
 - **New moments every run.** Run it again on the same video and it only uses moments it hasn't used yet.
 - **Gallery.** All Reels are saved in `Movies/Reels Cutter/<video name>/`, and `Movies/Reels Cutter/gallery.html` shows every Reel with its hook, transcript and a download link.
 - **Metadata.** Each file's title is its hook, and its description is the opening transcript.
+- **AI moment picking (optional).** With an Anthropic API key, Claude reads the transcript, picks the most engaging moments and writes the hooks and post captions. Save the key once with `echo 'sk-ant-...' > ~/.reels_cutter_key`. Without a key the built-in picker is used.
+- **Face tracking.** In the `crop` (Fill) layout the frame centers on the speaker's face instead of the middle.
+- **Background music.** Drop songs into `Movies/Reels Cutter/music` and each Reel gets one mixed in quietly. It ducks automatically when someone talks.
+- **Post captions.** Every Reel gets a ready-to-paste Instagram caption with hashtags (in the gallery with a Copy button, and as a `_caption.txt` next to the video).
+- **Caption styles.** `--style classic|bold|boxed|minimal`.
+- **High quality export.** Lanczos scaling, CRF 16 H.264 High profile, 256k AAC and loudness normalized to -14 LUFS so every Reel is equally loud.
 - **Burned-in captions.** Word-by-word captions, 1 to 3 words at a time, with the spoken word highlighted in yellow.
 
 ## Setup (once)
@@ -48,6 +54,10 @@ python reels_cutter.py my_video.mp4 --language nl --model medium
 | `--hooks` | none | Text file with your own hook lines, one per Reel in order |
 | `--hook-seconds` | 3 | How long the hook title stays up |
 | `--font` | Arial | Any font installed on your computer |
+| `--style` | classic | Caption style: `classic`, `bold`, `boxed`, `minimal` |
+| `--music` | `<library>/music` | Music file or folder; `none` turns it off |
+| `--no-ai` | off | Don't use Claude even if a key is saved |
+| `--no-face` | off | Center the crop instead of following the face |
 | `--look` | none | Color look: `none`, `warm`, `cool`, `punchy`, `bw` |
 | `--no-jumpcuts` | off | Keep the pauses |
 | `--no-enhance` | off | Skip denoise and sharpening |

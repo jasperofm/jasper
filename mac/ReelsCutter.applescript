@@ -29,7 +29,10 @@ on cutVideo(f)
 	set lookPick to choose from list {"none", "warm", "cool", "punchy", "bw"} with prompt "Pick a color look:" default items {"none"} with title "Reels Cutter"
 	if lookPick is false then return
 	set lookArg to item 1 of lookPick
-	set cmd to "clear; cd " & quoted form of repoDir & " && python3 reels_cutter.py " & quoted form of videoPath & " --count " & countNum & " --layout " & layoutArg & " --look " & lookArg & " --open && echo && echo 'Done! Your Reels are in the gallery that just opened (Movies > Reels Cutter).'"
+	set stylePick to choose from list {"classic", "bold", "boxed", "minimal"} with prompt "Pick a caption style:" default items {"classic"} with title "Reels Cutter"
+	if stylePick is false then return
+	set styleArg to item 1 of stylePick
+	set cmd to "clear; cd " & quoted form of repoDir & " && python3 reels_cutter.py " & quoted form of videoPath & " --count " & countNum & " --layout " & layoutArg & " --look " & lookArg & " --style " & styleArg & " --open && echo && echo 'Done! Your Reels are in the gallery that just opened (Movies > Reels Cutter).'"
 	tell application "Terminal"
 		activate
 		do script cmd
