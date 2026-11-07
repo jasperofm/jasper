@@ -42,8 +42,15 @@ def transcribe(video, model_name, language, cache_path):
         sys.exit("faster-whisper is not installed. Run: pip install faster-whisper")
     print(f"Transcribing with Whisper '{model_name}' (first run downloads the model)...")
     model = WhisperModel(model_name, device="auto", compute_type="auto")
+    # Decode audio with ffmpeg ourselves: newer PyAV releases break faster-whisper's own decoder.
+    import numpy as np
+    pcm = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+        capture_output=True, check=True,
+    ).stdout
+    audio = np.frombuffer(pcm, np.int16).astype(np.float32) / 32768.0
     segments, info = model.transcribe(
-        str(video), language=language, word_timestamps=True, vad_filter=True
+        audio, language=language, word_timestamps=True, vad_filter=True
     )
     out = []
     for s in segments:
