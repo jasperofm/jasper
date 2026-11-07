@@ -26,7 +26,10 @@ on cutVideo(f)
 	else
 		set layoutArg to "blur"
 	end if
-	set cmd to "clear; cd " & quoted form of repoDir & " && v=" & quoted form of videoPath & " && out=\"${v%.*}_reels\" && python3 reels_cutter.py \"$v\" --count " & countNum & " --layout " & layoutArg & " --out \"$out\" && open \"$out\" && echo && echo 'Done! Your Reels are in the folder that just opened.'"
+	set lookPick to choose from list {"none", "warm", "cool", "punchy", "bw"} with prompt "Pick a color look:" default items {"none"} with title "Reels Cutter"
+	if lookPick is false then return
+	set lookArg to item 1 of lookPick
+	set cmd to "clear; cd " & quoted form of repoDir & " && python3 reels_cutter.py " & quoted form of videoPath & " --count " & countNum & " --layout " & layoutArg & " --look " & lookArg & " --open && echo && echo 'Done! Your Reels are in the gallery that just opened (Movies > Reels Cutter).'"
 	tell application "Terminal"
 		activate
 		do script cmd

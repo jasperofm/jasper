@@ -17,4 +17,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sample-reels
-          path: sample_reels/*.mp4
+          path: |
+            sample_lib/sample/*.mp4
+            sample_lib/gallery.html

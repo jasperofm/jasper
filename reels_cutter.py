@@ -122,20 +122,21 @@ def candidates(segs, lo, hi):
     return out
 
 
-def pick_clips(segs, count, lo, hi, gap=2.0):
+def pick_clips(segs, count, lo, hi, gap=2.0, used=()):
     """Choose `count` non-overlapping clips, each aiming at a different length."""
     if count == 1:
         targets = [(lo + hi) / 2]
     else:
         targets = [lo + (hi - lo) * k / (count - 1) for k in range(count)]
     chosen = []
+    blocked = [{"start": u[0], "end": u[1]} for u in used]   # moments used in earlier runs
     used_hooks = set()
     for t in sorted(targets, reverse=True):       # longest first: they are hardest to fit
         band = max(5.0, (hi - lo) / max(count, 1) / 1.5)
         best = None
         for widen in (1, 2, 4, 100):
             pool = [c for c in candidates(segs, max(lo, t - band * widen), min(hi, t + band * widen))
-                    if all(c["end"] + gap <= p["start"] or c["start"] >= p["end"] + gap for p in chosen)]
+                    if all(c["end"] + gap <= p["start"] or c["start"] >= p["end"] + gap for p in chosen + blocked)]
             if pool:
                 best = max(pool, key=lambda c: c["score"] - abs(c["dur"] - t) / 30
                            - (3 if segs[c["i"]]["text"].lower() in used_hooks else 0))
@@ -157,6 +158,32 @@ def make_hook(text, max_words=9):
     return hook.upper()
 
 
+# ---------------------------------------------------------------- jump cuts
+def keep_ranges(words, clip_start, clip_end, max_pause=0.35, pad=0.08):
+    """Spans (relative to clip start) that contain speech; pauses longer than max_pause are cut."""
+    ranges = []
+    for w in words:
+        a = max(0.0, w["start"] - pad - clip_start)
+        b = min(clip_end - clip_start, w["end"] + pad - clip_start)
+        if ranges and a - ranges[-1][1] <= max_pause:
+            ranges[-1][1] = max(ranges[-1][1], b)
+        else:
+            ranges.append([a, b])
+    return [(a, b) for a, b in ranges if b - a > 0.05]
+
+
+def remap(t, ranges):
+    """Time in the original clip -> time in the jump-cut clip."""
+    acc = 0.0
+    for a, b in ranges:
+        if t < a:
+            return acc
+        if t <= b:
+            return acc + (t - a)
+        acc += b - a
+    return acc
+
+
 # ---------------------------------------------------------------- captions (ASS)
 def ass_time(t):
     t = max(0.0, t)
@@ -169,7 +196,10 @@ def ass_escape(s):
     return s.replace("\\", "").replace("{", "(").replace("}", ")")
 
 
-def write_ass(path, words, clip_start, clip_end, hook, hook_secs, font, chunk=3):
+def write_ass(path, words, clip_start, clip_end, hook, hook_secs, font, chunk=3, ranges=None):
+    if ranges is None:
+        ranges = [(0.0, clip_end - clip_start)]
+    rt = lambda t: remap(t - clip_start, ranges)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
@@ -208,32 +238,94 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 else ass_escape(x["word"].upper())
                 for n, x in enumerate(group)
             )
-            lines.append(f"Dialogue: 0,{ass_time(st - clip_start)},{ass_time(en - clip_start)},Cap,,0,0,0,,{txt}")
+            if rt(en) - rt(st) > 0.01:
+                lines.append(f"Dialogue: 0,{ass_time(rt(st))},{ass_time(rt(en))},Cap,,0,0,0,,{txt}")
     Path(path).write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
 
 
 # ---------------------------------------------------------------- rendering
-def render(video, out_dir, name, start, end, ass_name, layout, crf):
+LOOKS = {
+    "none": "",
+    "warm": "colorbalance=rs=0.06:gs=0.01:bs=-0.06,eq=saturation=1.1",
+    "cool": "colorbalance=rs=-0.05:gs=0:bs=0.06,eq=saturation=1.05",
+    "punchy": "eq=contrast=1.12:saturation=1.25:brightness=0.01",
+    "bw": "hue=s=0,eq=contrast=1.12",
+}
+
+
+def render(video, out_dir, name, start, end, ass_name, layout, crf, ranges=None, look="none", enhance=True,
+           title="", description=""):
+    pre = "fps=30"
+    apre = "anull"
+    if ranges:
+        expr = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in ranges)
+        pre += f",select='{expr}',setpts=N/30/TB"
+        apre = f"aselect='{expr}',asetpts=N/SR/TB"
+    post = []
+    if enhance:
+        post.append("hqdn3d=1.5:1.5:6:6,unsharp=5:5:0.6:5:5:0")
+    if LOOKS.get(look):
+        post.append(LOOKS[look])
+    post.append(f"setsar=1,ass={ass_name}")
+    post = ",".join(post)
     if layout == "crop":
-        vf = f"scale=-2:{H},crop={W}:{H},setsar=1,ass={ass_name}"
+        vf = f"[0:v]{pre},scale=-2:{H},crop={W}:{H},{post}[v]"
     else:  # blur: whole frame fitted, blurred copy fills the background
-        vf = (f"split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-              f"boxblur=30:3[bg];[b]scale={W}:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,ass={ass_name}")
+        vf = (f"[0:v]{pre},split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+              f"boxblur=30:3[bg];[b]scale={W}:-2:flags=lanczos[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,{post}[v]")
+    vf += f";[0:a]{apre}[a]"
     cmd = [
         FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
         "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", str(Path(video).resolve()),
-        "-filter_complex", vf, "-r", "30",
-        "-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", name,
+        "-filter_complex", vf, "-map", "[v]", "-map", "[a]", "-r", "30",
+        "-c:v", "libx264", "-preset", "slow", "-crf", str(crf), "-pix_fmt", "yuv420p",
+        "-profile:v", "high", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        "-metadata", f"title={title}", "-metadata", f"comment={description}",
+        "-metadata", f"description={description}", "-movflags", "+faststart", name,
     ]
     subprocess.run(cmd, cwd=out_dir, check=True)
+
+
+# ---------------------------------------------------------------- gallery
+def write_gallery(library):
+    """One HTML page that shows every Reel in the library folder."""
+    import html
+    cards = []
+    for manifest in sorted(library.glob("*/reels.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            reels = json.loads(manifest.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        folder = manifest.parent.name
+        for r in reels:
+            if not (manifest.parent / r["file"]).exists():
+                continue
+            src = f"{folder}/{r['file']}"
+            cards.append(f"""<figure><video src="{html.escape(src)}" controls preload="metadata" playsinline></video>
+<figcaption><b>{html.escape(r['hook'])}</b><span>{html.escape(folder)} · {r['length']:.0f}s · from {r['source_start']:.0f}s</span>
+<details><summary>Transcript</summary><p>{html.escape(r['transcript'])}</p></details>
+<a href="{html.escape(src)}" download>Download</a></figcaption></figure>""")
+    page = f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Reels</title><style>
+body{{margin:0;background:#111;color:#eee;font:15px -apple-system,Helvetica,sans-serif;padding:24px}}
+h1{{margin:0 0 20px}}main{{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px}}
+figure{{margin:0;background:#1c1c1c;border-radius:14px;overflow:hidden}}video{{width:100%;aspect-ratio:9/16;background:#000;display:block}}
+figcaption{{padding:12px;display:flex;flex-direction:column;gap:6px}}span{{color:#999;font-size:13px}}
+a{{color:#7cf}}details p{{color:#bbb;font-size:13px}}
+</style></head><body><h1>My Reels ({len(cards)})</h1><main>{''.join(cards) or '<p>No Reels yet.</p>'}</main></body></html>"""
+    path = library / "gallery.html"
+    path.write_text(page, encoding="utf-8")
+    return path
 
 
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description="Cut one long video into several different vertical Reels.")
     ap.add_argument("video")
-    ap.add_argument("--out", default=None, help="output folder (default: <video>_reels)")
+    ap.add_argument("--out", default=None, help="output folder (default: ~/Movies/Reels Cutter/<video name>)")
+    ap.add_argument("--library", default=str(Path.home() / "Movies" / "Reels Cutter"),
+                    help="folder that holds all your Reels and gallery.html")
+    ap.add_argument("--open", action="store_true", help="open the gallery when done")
     ap.add_argument("--count", type=int, default=5, help="how many Reels (default 5)")
     ap.add_argument("--min", type=float, default=15, help="shortest Reel in seconds (default 15)")
     ap.add_argument("--max", type=float, default=90, help="longest Reel in seconds (default 90)")
@@ -244,7 +336,10 @@ def main():
     ap.add_argument("--hooks", default=None, help="text file with your own hook lines, one per Reel")
     ap.add_argument("--hook-seconds", type=float, default=3.0)
     ap.add_argument("--font", default="Arial")
-    ap.add_argument("--crf", type=int, default=20)
+    ap.add_argument("--crf", type=int, default=18, help="quality, lower = better/bigger (default 18)")
+    ap.add_argument("--look", choices=list(LOOKS), default="none", help="color look: none/warm/cool/punchy/bw")
+    ap.add_argument("--no-jumpcuts", action="store_true", help="keep pauses instead of cutting them out")
+    ap.add_argument("--no-enhance", action="store_true", help="skip denoise + sharpen")
     ap.add_argument("--dry-run", action="store_true", help="only print the chosen moments")
     a = ap.parse_args()
 
@@ -255,7 +350,8 @@ def main():
         sys.exit(f"Not found: {video}")
     if not 5 <= a.min <= a.max:
         sys.exit("--min must be >= 5 and <= --max")
-    out = Path(a.out or f"{video.with_suffix('')}_reels")
+    library = Path(a.library).expanduser()
+    out = Path(a.out) if a.out else library / video.stem
     out.mkdir(parents=True, exist_ok=True)
 
     segs = transcribe(video, a.model, a.language, out / "transcript.json")
@@ -265,34 +361,54 @@ def main():
     if total < a.min:
         sys.exit(f"The video is only {total:.0f}s long, shorter than --min.")
 
-    clips = pick_clips(segs, a.count, a.min, a.max)
+    old = []
+    if (out / "reels.json").exists():
+        old = json.loads((out / "reels.json").read_text(encoding="utf-8"))
+    used = [(r["source_start"], r["source_end"]) for r in old]
+    if used:
+        print(f"{len(used)} Reels already made from this video; picking new moments.")
+    clips = pick_clips(segs, a.count, a.min, a.max, used=used)
+    if not clips:
+        print("No unused moments left in this video. Try a lower --min, or a new video.")
     custom_hooks = []
     if a.hooks:
         custom_hooks = [l.strip() for l in Path(a.hooks).read_text(encoding="utf-8").splitlines() if l.strip()]
 
-    manifest = []
-    for n, c in enumerate(clips, 1):
+    manifest = list(old)
+    first = len(old) + 1
+    for n, c in enumerate(clips, first):
         clip_segs = segs[c["i"]:c["j"] + 1]
         words = [w for s in clip_segs for w in s["words"]]
         start = max(0.0, c["start"] - 0.15)
         end = min(total, c["end"] + 0.35)
-        hook = custom_hooks[n - 1] if n - 1 < len(custom_hooks) else make_hook(clip_segs[0]["text"])
-        name = f"reel_{n:02d}_{int(end - start)}s.mp4"
+        hook = custom_hooks[n - first] if n - first < len(custom_hooks) else make_hook(clip_segs[0]["text"])
+        ranges = None if a.no_jumpcuts else keep_ranges(words, start, end)
+        final_len = sum(b - x for x, b in ranges) if ranges else end - start
+        name = f"reel_{n:02d}_{int(final_len)}s.mp4"
         ass_name = f"reel_{n:02d}.ass"
-        print(f"\nReel {n}: {start:.1f}s -> {end:.1f}s ({end - start:.0f}s)  hook: {hook}")
+        cut_note = f", {end - start - final_len:.1f}s of pauses cut" if ranges else ""
+        print(f"\nReel {n}: {start:.1f}s -> {end:.1f}s ({final_len:.0f}s{cut_note})  hook: {hook}")
         manifest.append({
             "file": name, "source_start": round(start, 2), "source_end": round(end, 2),
-            "length": round(end - start, 1), "hook": hook,
+            "length": round(final_len, 1), "hook": hook,
             "transcript": " ".join(s["text"] for s in clip_segs),
         })
         if a.dry_run:
             continue
-        write_ass(out / ass_name, words, start, end, hook, a.hook_seconds, a.font)
-        render(video, out, name, start, end, ass_name, a.layout, a.crf)
+        write_ass(out / ass_name, words, start, end, hook, a.hook_seconds, a.font, ranges=ranges)
+        render(video, out, name, start, end, ass_name, a.layout, a.crf,
+               ranges=ranges, look=a.look, enhance=not a.no_enhance,
+               title=hook.title(), description=manifest[-1]["transcript"][:250])
         print(f"  wrote {out / name}")
 
-    (out / "reels.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
-    print(f"\nDone: {len(manifest)} Reels in {out}  (details in reels.json)")
+    if not a.dry_run:
+        (out / "reels.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+    print(f"\nDone: {len(clips)} new Reels in {out}")
+    if out.parent == library:
+        gallery = write_gallery(library)
+        print(f"Gallery: {gallery}")
+        if a.open:
+            subprocess.run(["open", str(gallery)])
 
 
 if __name__ == "__main__":

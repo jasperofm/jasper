@@ -1,3 +1,4 @@
 *_reels/
 *.mp4
 __pycache__/
+sample_lib/

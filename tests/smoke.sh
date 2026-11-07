@@ -8,9 +8,10 @@ ffmpeg -y -loglevel error -i speech1.wav -i speech1.wav -i speech1.wav -filter_c
 D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 speech.wav)
 ffmpeg -y -loglevel error -f lavfi -i "testsrc2=size=1920x1080:rate=30:duration=$D" -i speech.wav \
   -shortest -c:v libx264 -preset ultrafast -c:a aac sample.mp4
-python reels_cutter.py sample.mp4 --count 2 --min 10 --max 40 --model tiny --language en
-ls sample_reels/*.mp4
-for f in sample_reels/*.mp4; do
+python reels_cutter.py sample.mp4 --count 2 --min 10 --max 40 --model tiny --language en --library sample_lib --look punchy
+ls sample_lib/sample/*.mp4
+for f in sample_lib/sample/*.mp4; do
   test "$(ffprobe -v error -select_streams v -show_entries stream=width,height -of csv=p=0 "$f")" = "1080,1920"
 done
+test -f sample_lib/gallery.html
 echo "smoke test passed"
