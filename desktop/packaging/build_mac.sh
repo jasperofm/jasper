@@ -23,5 +23,10 @@ rm -rf build/dmg && mkdir -p build/dmg
 cp -R "$APP" build/dmg/
 ln -s /Applications build/dmg/Applications
 OUT="dist/ReelsCutter-1.0.0-macOS-${ARCH}.dmg"
-hdiutil create -volname "Reels Cutter" -srcfolder build/dmg -ov -format UDZO "$OUT"
+# hdiutil sometimes fails with "Resource busy" on CI machines; retry a few times
+for i in 1 2 3 4 5; do
+  if hdiutil create -volname "Reels Cutter" -srcfolder build/dmg -fs HFS+ -ov -format UDZO "$OUT"; then break; fi
+  echo "hdiutil failed (attempt $i), retrying…"; sleep $((i * 5))
+  [ "$i" = 5 ] && exit 1
+done
 du -sh "$APP" "$OUT"
