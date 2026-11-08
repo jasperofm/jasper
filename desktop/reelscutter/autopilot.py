@@ -182,38 +182,54 @@ def changes(job):
         picked += f" · {info['explanation']}"
     out.append(("Why this part", picked or "picked by the clip settings"))
 
-    aspect, res = pr.get("aspect", "9:16"), pr.get("resolution", "1080p")
-    fit = pr.get("fit", "blur")
+    # Finished clips: what the export really applied (recorded by the exporter, after any automatic repair).
+    # Clips not finished yet: what is planned, marked as such.
+    ap = json.loads(job["applied"]) if "applied" in job.keys() and job["applied"] else None
+    tag = "" if ap else " (planned)"
+    if ap is None:
+        faces = json.loads(v["analysis"]).get("faces") if v and v["analysis"] else None
+        ap = {"aspect": pr.get("aspect", "9:16"), "fit": pr.get("fit", "blur"), "fps": pr.get("fps", "source"),
+              "tracked": bool(pr.get("reframe_mode") == "auto" and faces), "size": None,
+              "captions_burned": bool(pr.get("subtitles")), "caption_style": pr.get("caption_style"),
+              "caption_files": bool(pr.get("sidecar_captions")), "caption_words": None,
+              "loudness": bool(pr.get("normalize_audio", True)), "fade_in": float(pr.get("fade_in") or 0),
+              "fade_out": float(pr.get("fade_out") or 0), "codec": pr.get("codec", "h264"),
+              "quality_mode": pr.get("quality_mode"), "crf": pr.get("crf"), "bitrate_mbps": pr.get("bitrate_mbps"),
+              "attempt": None}
+    aspect, fit = ap.get("aspect") or "9:16", ap.get("fit") or "blur"
     if aspect == "original":
         frame = "kept the original shape"
     elif fit == "crop":
-        faces = (json.loads(v["analysis"]).get("faces") if v and v["analysis"] else None)
-        frame = (f"cropped to {aspect}, following the speaker's face" if pr.get("reframe_mode") == "auto" and faces
-                 else f"cropped to {aspect}, centered")
+        frame = f"cropped to {aspect}, " + ("following the speaker's face" if ap.get("tracked") else "centered")
     elif fit == "fit":
         frame = f"fitted inside {aspect} with bars"
     else:
         frame = f"{aspect} with a blurred copy of the video behind it"
     src = f"{v['width']}×{v['height']}" if v and v["width"] else "source"
-    out.append(("Framing", f"{frame} · {src} → {res}" + (f" · {pr['fps']} fps" if pr.get("fps") not in (None, "source")
-                                                          else "")))
-    if pr.get("subtitles"):
-        out.append(("Captions", f"burned in, word by word ({pr.get('caption_style', 'classic')} style, "
-                                f"{pr.get('caption_position', 'bottom')})"
-                                + (" + caption files" if pr.get("sidecar_captions") else "")))
-    elif pr.get("sidecar_captions"):
-        out.append(("Captions", "caption files (.srt/.vtt) next to the clip"))
+    dst = "×".join(map(str, ap["size"])) if ap.get("size") else pr.get("resolution", "1080p")
+    out.append(("Framing" + tag, f"{frame} · {src} → {dst}"
+                + (f" · {ap['fps']} fps" if ap.get("fps") not in (None, "source") else "")))
+    if ap.get("captions_burned"):
+        cap = f"burned in, word by word ({ap.get('caption_style') or 'classic'} style"
+        cap += f", {ap['caption_words']} words)" if ap.get("caption_words") else ")"
+        if ap.get("caption_files"):
+            cap += " + caption files"
+    elif ap.get("caption_files"):
+        cap = "caption files (.srt/.vtt) next to the clip"
+    elif pr.get("subtitles") and not tag:
+        cap = "none: captions were planned but dropped (see Repairs)"
     else:
-        out.append(("Captions", "none"))
-    snd = ["loudness levelled to −14 LUFS (the level Reels/TikTok/Shorts play at)"] if pr.get("normalize_audio",
-                                                                                            True) else ["untouched"]
-    out.append(("Sound", ", ".join(snd)))
-    fi, fo = float(pr.get("fade_in") or 0), float(pr.get("fade_out") or 0)
-    if fi or fo:
-        out.append(("Fades", f"{fi:.1f} s in, {fo:.1f} s out"))
-    out.append(("Encoding", f"{(pr.get('codec') or 'h264').upper()} · "
-                            + (f"{pr.get('bitrate_mbps')} Mbps" if pr.get("quality_mode") == "bitrate"
-                               else f"quality {pr.get('crf', 18)}")))
+        cap = "none"
+    out.append(("Captions" + tag, cap))
+    out.append(("Sound" + tag, "loudness levelled to −14 LUFS (the level Reels/TikTok/Shorts play at)"
+                if ap.get("loudness") else "untouched"))
+    if ap.get("fade_in") or ap.get("fade_out"):
+        out.append(("Fades" + tag, f"{ap.get('fade_in', 0):.1f} s in, {ap.get('fade_out', 0):.1f} s out"))
+    enc = f"{(ap.get('codec') or 'h264').upper()} · " + (f"{ap.get('bitrate_mbps')} Mbps" if ap.get(
+        "quality_mode") == "bitrate" else f"quality {ap.get('crf') or 18}")
+    if ap.get("attempt") and ap["attempt"] != "as configured":
+        enc += f" · made with fallback: {ap['attempt']}"
+    out.append(("Encoding" + tag, enc))
     if job["repairs"]:
         out.append(("Repairs", " | ".join(json.loads(job["repairs"]))[:400]))
     if job["qc"]:

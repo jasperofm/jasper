@@ -543,6 +543,14 @@ class Queue:
                     repairs.append(f"attempt {k + 1} ({why}) failed: {str(e)[:300]}")
                     part.unlink(missing_ok=True)
                     continue
+                applied = {"attempt": why, "encoder": hw, "size": list(size), "fps": pr.get("fps", "source"),
+                           "aspect": pr.get("aspect"), "fit": pr.get("fit"), "tracked": bool(track),
+                           "captions_burned": bool(allow_subs and subs and pr.get("subtitles")),
+                           "caption_style": pr.get("caption_style"), "caption_words": len(words or []),
+                           "loudness": bool(pr.get("normalize_audio", True)) and bool(v["acodec"]),
+                           "fade_in": float(pr.get("fade_in") or 0), "fade_out": float(pr.get("fade_out") or 0),
+                           "codec": pr.get("codec", "h264"), "quality_mode": pr.get("quality_mode"),
+                           "crf": pr.get("crf"), "bitrate_mbps": pr.get("bitrate_mbps")}
                 if db.setting("qc_enabled", "1") != "1":
                     result = dict(ok=True, fatal=False, issues=[], warnings=["quality checks are turned off"],
                                   info={})
@@ -568,6 +576,7 @@ class Queue:
             if words and preset.get("sidecar_captions"):
                 subtitles.write_srt(words, job["start"], final.with_suffix(".srt"))
                 subtitles.write_vtt(words, job["start"], final.with_suffix(".vtt"))
+                applied["caption_files"] = True
             size_b = final.stat().st_size
             thumb = None
             try:
@@ -578,11 +587,11 @@ class Queue:
             review = ("failed_qc" if not result["ok"] else
                       "awaiting" if db.setting("review_required", "0") == "1" else "ready")
             db.run("UPDATE jobs SET status=?, progress=1, finished_at=?, out_size=?, out_path=?, error=?, qc=?, "
-                   "repairs=?, review=?, thumb=? WHERE id=?",
+                   "repairs=?, review=?, thumb=?, applied=? WHERE id=?",
                    ("done" if result["ok"] else "failed", time.time(), size_b, str(final),
                     None if result["ok"] else "Failed quality check: " + "; ".join(result["issues"]),
                     json.dumps(result), json.dumps(repairs) if repairs else None, review, thumb and str(thumb),
-                    jid))
+                    json.dumps(applied), jid))
             if repairs:
                 db.log("info", f"Job {jid} needed repairs: " + " | ".join(repairs), jid)
             self.speed.append((length, time.time() - t0))

@@ -63,6 +63,7 @@ inbox.mkdir()
 db.set_setting("output_dir", str(work / "out"))
 db.set_setting("internal_reserve_gb", "0.5")
 db.set_setting("min_free_gb", "0.5")
+db.set_setting("pause_on_battery", "0")      # so the test also runs on a laptop on battery
 db.set_setting("ayrshare_api_key", "test-key")
 db.set_setting("post_platforms", json.dumps(["instagram", "youtube", "reddit"]))
 db.set_setting("reddit_subreddit", "r/testsub")
@@ -126,7 +127,14 @@ for what, det in ch:
 names = [w for w, _ in ch]
 for need in ("Cut from", "Why this part", "Framing", "Captions", "Sound", "Quality check", "Post", "File"):
     assert need in names, (need, names)
-assert "blurred" in dict(ch)["Framing"] and "−14 LUFS" in dict(ch)["Sound"]
+assert "blurred" in dict(ch)["Framing"] and "1080×1920" in dict(ch)["Framing"] and "−14 LUFS" in dict(ch)["Sound"]
+assert json.loads(jobs[0]["applied"])["captions_burned"] is False
+
+# a clip whose captions were planned but dropped by an automatic repair must say so, not claim captions
+j = dict(jobs[0])
+j["preset"] = json.dumps(dict(json.loads(j["preset"]), subtitles=True))
+fake = type("Row", (), {"__getitem__": lambda s_, k: j[k], "keys": lambda s_: j.keys()})()
+assert "dropped" in dict(autopilot.changes(fake))["Captions"], autopilot.changes(fake)
 
 vids = autopilot.videos()
 assert vids and vids[0]["autopilot"] and len(vids[0]["steps"]) == len(autopilot.STEPS)

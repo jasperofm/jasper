@@ -95,6 +95,9 @@ MIGRATIONS = [
     ALTER TABLE batches ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE posts ADD COLUMN reddit_id TEXT;
     """,
+    """
+    ALTER TABLE jobs ADD COLUMN applied TEXT;
+    """,
 ]
 
 
