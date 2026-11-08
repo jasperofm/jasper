@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reels Cutter Web</title>
+<meta name="description" content="Turn a long video into vertical clips right in your browser. Nothing is uploaded.">
+<link rel="icon" href="../img/icon.png">
+<style>
+  :root{color-scheme:dark;--bg:#0f1115;--panel:#161a21;--panel2:#1d222b;--border:#262c37;--text:#e8eaef;--muted:#8a93a6;--a1:#ff4f6d;--a2:#ff8a5c;--good:#3ecf8e;--warn:#f5b94a;--bad:#ff5d5d}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-left,0px)) 60px}
+  nav{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 0;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;text-decoration:none}
+  .brand img{width:30px;height:30px}
+  .brand span{color:var(--muted);font-weight:500}
+  nav .links a{color:var(--muted);text-decoration:none;margin-left:18px;font-size:14px}
+  nav .links a:hover{color:var(--text)}
+  h1{font-size:clamp(26px,4vw,36px);margin:10px 0 6px;letter-spacing:-.01em;text-wrap:balance}
+  h2{font-size:18px;margin:0 0 12px}
+  .muted{color:var(--muted)}
+  .small{font-size:13px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px}
+  .drop{display:block;border:2px dashed var(--border);border-radius:16px;padding:46px 20px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;margin-top:18px}
+  .drop:hover,.drop.over{border-color:var(--a1);background:rgba(255,79,109,.05)}
+  .drop b{font-size:18px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+  .btn:hover{border-color:#3a4352}
+  .btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a2);outline-offset:2px}
+  .btn.primary{background:linear-gradient(90deg,var(--a1),var(--a2));border:none;color:#fff}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.sm{padding:6px 12px;font-size:13px}
+  .grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;margin-top:18px}
+  @media (max-width:860px){.grid{grid-template-columns:1fr}}
+  video{width:100%;max-height:440px;background:#000;border-radius:10px;display:block}
+  .meta{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:420px){.form{grid-template-columns:1fr}}
+  label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--muted)}
+  select,input[type=number]{width:100%;min-width:0;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font:inherit}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .bar{height:8px;background:var(--panel2);border-radius:5px;overflow:hidden;margin-top:10px}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--a1),var(--a2));transition:width .2s}
+  .status{margin-top:8px;font-size:13px;color:var(--muted);min-height:20px}
+  canvas#wave{width:100%;height:70px;display:block;margin-top:12px;border-radius:8px;background:var(--panel2)}
+  .clips{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .clip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .clip .t{font-weight:600;font-variant-numeric:tabular-nums}
+  .clip .why{font-size:12.5px;color:var(--muted)}
+  .score{display:inline-block;min-width:38px;text-align:center;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:rgba(62,207,142,.15);color:var(--good)}
+  .score.mid{background:rgba(245,185,74,.15);color:var(--warn)}
+  .clip .ctl{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+  .clip input[type=range]{width:120px}
+  .clip .out a{color:var(--good);font-weight:600;font-size:13px}
+  .clip .err{color:var(--bad);font-size:12.5px}
+  .note{border-left:3px solid var(--warn);padding:10px 14px;background:rgba(245,185,74,.07);border-radius:6px;font-size:13.5px;margin-top:16px}
+  .hidden{display:none!important}
+  footer{margin-top:40px;color:var(--muted);font-size:13px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="../"><img src="../img/icon.png" alt="">Reels Cutter <span>Web</span></a>
+    <div class="links"><a href="../#download">Get the Mac app</a><a href="../#faq">FAQ</a></div>
+  </nav>
+
+  <h1>Cut a long video into Reels, right here</h1>
+  <p class="muted" style="margin:0;max-width:720px">Pick a video and Reels Cutter finds the liveliest moments, then turns them into vertical 9:16 clips. Everything happens in your browser. Your video is never uploaded anywhere.</p>
+
+  <div id="unsupported" class="note hidden">Your browser can't encode video. Please use a recent version of Chrome, Edge or Safari 17 or newer, or <a href="../#download">download the Mac app</a>.</div>
+
+  <label id="drop" class="drop" for="file">
+    <b>Drop a video here, or click to choose one</b><br>
+    <span class="muted small">MP4 or MOV work best. Long videos are fine, but they take longer to scan.</span>
+    <input id="file" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv" hidden>
+  </label>
+
+  <div id="work" class="grid hidden">
+    <div class="panel">
+      <video id="player" controls playsinline preload="metadata"></video>
+      <div class="meta" id="meta"></div>
+      <canvas id="wave" width="1000" height="70" aria-label="Loudness over time, with the chosen clips highlighted"></canvas>
+    </div>
+
+    <div class="panel">
+      <h2>Settings</h2>
+      <div class="form">
+        <label class="f">Clip length
+          <select id="len"><option value="15">15 seconds</option><option value="30" selected>30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></select>
+        </label>
+        <label class="f">How many clips
+          <input id="count" type="number" min="1" max="30" value="5">
+        </label>
+        <label class="f">Framing
+          <select id="framing"><option value="crop" selected>Fill the screen (crop sides)</option><option value="fit">Show everything (black bars)</option></select>
+        </label>
+        <label class="f">Quality
+          <select id="res"><option value="1080">1080 × 1920 (best)</option><option value="720" selected>720 × 1280 (faster)</option></select>
+        </label>
+        <label class="f">Look for
+          <select id="mode"><option value="smart" selected>Best moments (sound + scene changes)</option><option value="audio">Loudest moments (sound only)</option><option value="even">Evenly spaced</option></select>
+        </label>
+        <label class="f">Skip the start / end (sec)
+          <input id="skip" type="number" min="0" max="600" value="5">
+        </label>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button id="find" class="btn primary">Find clips</button>
+        <button id="exportAll" class="btn" disabled>Make selected clips</button>
+        <button id="cancel" class="btn sm hidden">Stop</button>
+      </div>
+      <div class="bar"><i id="prog"></i></div>
+      <div class="status" id="status" role="status"></div>
+    </div>
+  </div>
+
+  <div id="results" class="panel hidden" style="margin-top:18px">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Clips</h2><span class="muted small">Click a time to preview it. Use the slider to move the frame left or right.</span></div>
+    <div class="clips" id="clips"></div>
+  </div>
+
+  <div class="note">The web version cuts, reframes and scores clips. Captions, face tracking, batch jobs and the quality checks are in the <a href="../#download">Mac app</a>.</div>
+  <footer>Made with <a href="https://mediabunny.dev">Mediabunny</a> (MPL-2.0). Your files stay on your computer.</footer>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
