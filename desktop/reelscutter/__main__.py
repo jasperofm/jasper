@@ -59,7 +59,7 @@ def playtest(path=None):
     if not path:
         path = os.path.join(tempfile.mkdtemp(), "play.mp4")
         subprocess.run([paths.ffmpeg(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=4", "-f",
-                        "lavfi", "-i", "sine=d=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                        "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
                         "-shortest", path], check=True)
     app = QGuiApplication.instance() or QGuiApplication([])
     print("qt plugins:", QCoreApplication.libraryPaths())
