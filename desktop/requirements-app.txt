@@ -1,0 +1,9 @@
+# Desktop app (Reels Cutter.app). Speech recognition (faster-whisper) is installed separately in the build
+# because it is optional: the app works without it.
+PySide6>=6.7,<6.9
+av>=12
+numpy
+imageio-ffmpeg>=0.5
+opencv-python-headless<5
+psutil
+anthropic

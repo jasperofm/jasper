@@ -2,3 +2,10 @@
 *.mp4
 __pycache__/
 sample_lib/
+
+# desktop app build outputs
+desktop/build/
+desktop/dist/
+desktop/packaging/ReelsCutter.icns
+__pycache__/
+*.pyc

@@ -1,3 +1,5 @@
+> **New: Reels Cutter desktop app for Mac.** A full app with a library, AI analysis, automatic clip generation, review studio and quality checks. See [desktop/README.md](desktop/README.md) and download it from the [latest release](https://github.com/jasperofm/jasper/releases/tag/desktop-latest).
+
 # Reels cutter
 
 Turns one long video you own into several **different** vertical (1080x1920) Reels:
