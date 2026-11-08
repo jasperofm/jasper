@@ -1,0 +1,46 @@
+name: web-models
+# Mirrors the small Whisper speech models used by the browser version into a GitHub release,
+# so the web app can serve them from its own host instead of a third-party site.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/web-models.yml"]
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download models
+        run: |
+          pip install -q "huggingface_hub>=0.25"
+          python - <<'EOF'
+          from huggingface_hub import HfApi, snapshot_download
+          import os, tarfile
+          api = HfApi()
+          repos = ["onnx-community/whisper-base_timestamped", "onnx-community/whisper-base", "onnx-community/whisper-tiny_timestamped"]
+          with open("listing.txt", "w") as out:
+              for r in repos:
+                  try:
+                      files = api.list_repo_files(r)
+                  except Exception as e:
+                      out.write(f"{r}: unavailable ({e})\n"); continue
+                  out.write(f"== {r}\n" + "\n".join(files) + "\n")
+                  onnx = [f for f in files if f.startswith("onnx/") and ("_quantized" in f or "_q8" in f or "_int8" in f)]
+                  pats = ["*.json", "*.txt"] + [f for f in onnx if ("encoder_model" in f or "decoder_model_merged" in f)]
+                  d = snapshot_download(r, allow_patterns=pats, local_dir="m/" + r.split("/")[1])
+                  name = r.split("/")[1] + ".tar"
+                  with tarfile.open(name, "w") as t:
+                      t.add(d, arcname=r.split("/")[1])
+                  out.write(f"-> {name} {os.path.getsize(name)} bytes\n")
+          EOF
+          cat listing.txt
+          ls -la *.tar
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view web-models -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create web-models -R "$GITHUB_REPOSITORY" --title "Speech models for the browser version" \
+              --notes "Mirror of open Whisper ONNX models (MIT/Apache licensed) used by Reels Cutter Web." --prerelease
+          gh release upload web-models -R "$GITHUB_REPOSITORY" --clobber listing.txt *.tar
