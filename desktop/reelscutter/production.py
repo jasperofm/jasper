@@ -29,12 +29,15 @@ def profile(name):
     return json.loads(last) if last else None
 
 
-def start(g, video_ids, name="Batch"):
+def start(g, video_ids, name="Batch", autopilot=False):
     from .jobs import queue
     s = selection.SelectionSettings.from_dict(g["selection"])
     preset_name = g.get("preset") if g.get("preset") in db.presets() else db.setting("default_preset")
-    return queue.create_batch(video_ids, s, preset_name, build_preset(g), project=g.get("project", "Default"),
-                              name=name)
+    bid = queue.create_batch(video_ids, s, preset_name, build_preset(g), project=g.get("project", "Default"),
+                             name=name)
+    if autopilot:
+        db.run("UPDATE batches SET autopilot=1 WHERE id=?", (bid,))
+    return bid
 
 
 class Watcher:
@@ -68,6 +71,11 @@ class Watcher:
     def scan_all(self):
         for w in db.q("SELECT * FROM watch_folders WHERE enabled=1"):
             self.scan(w)
+        from . import autopilot
+        try:
+            autopilot.tick()
+        except Exception as e:
+            db.log("error", f"Autopilot step failed: {e}")
 
     def scan(self, w):
         from . import media
@@ -97,9 +105,11 @@ class Watcher:
         db.run("UPDATE watch_folders SET last_scan=? WHERE id=?", (time.time(), w["id"]))
         if imp.added_ids and prof:
             g = dict(prof, project=w["project"] or prof.get("project", "Default"))
-            start(g, imp.added_ids, name=f"Watch folder: {root.name}")
+            auto = bool(w["auto_post"]) if "auto_post" in w.keys() else False
+            start(g, imp.added_ids, name=f"{'Autopilot' if auto else 'Watch folder'}: {root.name}", autopilot=auto)
             db.log("info", f"Watch folder {root.name}: {len(imp.added_ids)} new video(s) queued with profile "
-                           f"“{w['profile'] or 'last used settings'}”")
+                           f"“{w['profile'] or 'last used settings'}”" + (" (autopilot: clips will be posted "
+                                                                           "automatically)" if auto else ""))
         elif imp.added_ids:
             db.log("info", f"Watch folder {root.name}: {len(imp.added_ids)} new video(s) imported (no profile set, "
                            "so nothing was generated)")

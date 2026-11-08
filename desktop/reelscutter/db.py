@@ -90,6 +90,11 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS posts_at ON posts(at);
     CREATE INDEX IF NOT EXISTS posts_status ON posts(status);
     """,
+    """
+    ALTER TABLE watch_folders ADD COLUMN auto_post INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE batches ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE posts ADD COLUMN reddit_id TEXT;
+    """,
 ]
 
 
@@ -192,6 +197,8 @@ DEFAULT_SETTINGS = {
     "post_window_end": "22",
     "youtube_visibility": "public",
     "post_platforms": '["instagram","tiktok","youtube"]',
+    "reddit_subreddit": "",
+    "autopilot_send": "1",
 }
 
 

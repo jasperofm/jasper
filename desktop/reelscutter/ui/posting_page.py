@@ -60,6 +60,14 @@ class PostingPage(QWidget):
         self.btn_test = QPushButton("Save and test")
         kh.addWidget(self.btn_test)
         f.addRow("Ayrshare API key", kh)
+        ch = QHBoxLayout()
+        self.btn_connect = QPushButton("Connect accounts…")
+        self.btn_connect.setToolTip("Opens your Ayrshare dashboard in the browser. Open Social Accounts and log in to "
+                                    "Instagram, TikTok, YouTube, X, Threads, Facebook, LinkedIn or Reddit on their "
+                                    "own login pages. Reels Cutter never sees your passwords.")
+        ch.addWidget(self.btn_connect)
+        ch.addWidget(label("Log in on each platform's own page, then press Save and test.", "muted"), 1)
+        f.addRow("Accounts", ch)
         self.conn = label("", "muted", wrap=True)
         f.addRow("", self.conn)
         ph = QHBoxLayout()
@@ -95,6 +103,15 @@ class PostingPage(QWidget):
         self.yt.setCurrentText(db.setting("youtube_visibility", "public"))
         self.yt.setMaximumWidth(220)
         f.addRow("YouTube visibility", self.yt)
+        self.sub = QLineEdit(db.setting("reddit_subreddit", "") or "")
+        self.sub.setPlaceholderText("e.g. personalfinance (without r/)")
+        self.sub.setMaximumWidth(320)
+        rh = QHBoxLayout()
+        rh.addWidget(self.sub)
+        rh.addWidget(label("Reddit gets a link post (it doesn't take video uploads from posting tools).", "muted"), 1)
+        f.addRow("Reddit subreddit", rh)
+        self.sub.setToolTip("Reddit doesn't take video uploads from posting tools, so Reddit gets a link post with "
+                            "the clip's title. Check the subreddit's rules on self-promotion first.")
         sl.addLayout(f)
         self.best = label("", "muted", wrap=True)
         sl.addWidget(self.best)
@@ -124,7 +141,7 @@ class PostingPage(QWidget):
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setMinimumHeight(300)
+        self.table.setMinimumHeight(160)
         cl.addWidget(self.table)
         self.msg = label("", "muted", wrap=True)
         cl.addWidget(self.msg)
@@ -139,6 +156,8 @@ class PostingPage(QWidget):
         for w in [self.per_day, self.w0, self.w1]:
             w.valueChanged.connect(self.save)
         self.yt.currentTextChanged.connect(self.save)
+        self.sub.editingFinished.connect(self.save)
+        self.btn_connect.clicked.connect(lambda: __import__("webbrowser").open(posting.CONNECT_URL))
         for cb in self.plat.values():
             cb.toggled.connect(self.save)
         self._done.connect(self._finished)
@@ -153,6 +172,7 @@ class PostingPage(QWidget):
         db.set_setting("post_window_start", self.w0.value())
         db.set_setting("post_window_end", self.w1.value())
         db.set_setting("youtube_visibility", self.yt.currentText())
+        db.set_setting("reddit_subreddit", self.sub.text().strip())
         db.set_setting("post_platforms", json.dumps([k for k, cb in self.plat.items() if cb.isChecked()]))
         self._best_text()
 

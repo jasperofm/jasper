@@ -2,7 +2,7 @@
 import time
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
                                QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
@@ -27,6 +27,8 @@ class AddWatchDialog(QDialog):
         self.project.setEditable(True)
         self.project.addItems([r["name"] for r in db.projects()])
         f.addRow("Project", self.project)
+        self.auto_post = QCheckBox("Autopilot: approve finished clips and post them automatically")
+        f.addRow("", self.auto_post)
         lay.addLayout(f)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
@@ -61,8 +63,8 @@ class AutomationPage(QWidget):
         for b in (self.btn_scan, self.btn_toggle, self.btn_rm, self.btn_add):
             h.addWidget(b)
         wl.addLayout(h)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Folder", "Profile", "Project", "State", "Last checked"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["Folder", "Profile", "Project", "State", "Last checked", "Posting"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -109,6 +111,7 @@ class AutomationPage(QWidget):
                                    time.strftime("%H:%M", time.localtime(r["last_scan"])) if r["last_scan"] else "–"),
                                   1):
                 self.table.setItem(i, c, QTableWidgetItem(t))
+            self.table.setItem(i, 5, QTableWidgetItem("Autopilot" if r["auto_post"] else "Manual"))
             if r["id"] == sel:
                 self.table.selectRow(i)
         from .. import production as pr
@@ -128,8 +131,9 @@ class AutomationPage(QWidget):
         dlg = AddWatchDialog(self, d)
         if dlg.exec() != QDialog.Accepted:
             return
-        db.run("INSERT OR REPLACE INTO watch_folders(path,project,profile,enabled) VALUES(?,?,?,1)",
-               (d, dlg.project.currentText().strip() or "Default", dlg.profile.currentData()))
+        db.run("INSERT OR REPLACE INTO watch_folders(path,project,profile,enabled,auto_post) VALUES(?,?,?,1,?)",
+               (d, dlg.project.currentText().strip() or "Default", dlg.profile.currentData(),
+                int(dlg.auto_post.isChecked())))
         production.watcher.start()
         self.refresh()
 

@@ -97,7 +97,8 @@ def main():
     if db.setting("onboarded", "0") != "1" and not os.environ.get("REELSCUTTER_NO_ONBOARDING"):
         w.onboarding()
     queue.start()
-    from . import production
+    from . import autopilot, production
+    autopilot.install()
     if db.q1("SELECT COUNT(*) c FROM watch_folders WHERE enabled=1")["c"]:
         production.watcher.start()
     files = [a for a in sys.argv[1:] if os.path.exists(a)]

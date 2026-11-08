@@ -25,6 +25,9 @@ jobs:
       - name: Auto-posting test (fake Ayrshare)
         working-directory: desktop
         run: python tests/test_posting.py
+      - name: Autopilot test (folder to posted clips, fake Ayrshare)
+        working-directory: desktop
+        run: python tests/test_autopilot.py
   build:
     needs: test-linux
     strategy:

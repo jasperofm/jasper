@@ -18,7 +18,10 @@ from . import db
 
 API = "https://api.ayrshare.com/api"
 PLATFORMS = {"instagram": "Instagram", "tiktok": "TikTok", "youtube": "YouTube Shorts", "threads": "Threads",
-             "twitter": "X", "facebook": "Facebook", "linkedin": "LinkedIn"}
+             "twitter": "X", "facebook": "Facebook", "linkedin": "LinkedIn", "reddit": "Reddit"}
+# Where you log in to each platform and link it (Ayrshare dashboard → Social Accounts). Logins happen on the
+# platforms' own pages; Reels Cutter never sees or stores your social media passwords.
+CONNECT_URL = "https://app.ayrshare.com/"
 # Starting guesses for when short videos do well (local time). Replaced by your own results as stats come in.
 DEFAULT_HOURS = [7, 9, 11, 12, 13, 15, 17, 18, 19, 20, 21, 22]
 VIEW_KEYS = ("playsCount", "viewsCount", "videoViews", "views", "mediaView", "impressionCount", "impression")
@@ -105,7 +108,11 @@ def _iso(ts):
 
 
 def send(post_id):
-    """Uploads (once) and schedules one planned post with Ayrshare."""
+    """Uploads (once) and schedules one planned post with Ayrshare.
+
+    Reddit doesn't accept video uploads through any posting API, so Reddit gets a separate link post (title plus a
+    link to the uploaded clip) in the subreddit chosen in settings.
+    """
     r = db.q1("SELECT * FROM posts WHERE id=?", (post_id,))
     if not r or r["status"] not in ("planned", "failed"):
         return
@@ -114,19 +121,36 @@ def send(post_id):
         url = r["media_url"] or upload(r["path"])
         db.run("UPDATE posts SET media_url=? WHERE id=?", (url, post_id))
         plats = json.loads(r["platforms"])
-        body = {"post": r["text"] or "", "platforms": plats, "mediaUrls": [url], "isVideo": True,
-                "idempotencyKey": f"reelscutter-{post_id}"}
-        if r["at"] > time.time() + 120:
-            body["scheduleDate"] = _iso(r["at"])
-        if "youtube" in plats:
-            body["youTubeOptions"] = {"title": (r["title"] or r["text"] or "New video")[:100],
-                                      "visibility": db.setting("youtube_visibility", "public"), "shorts": True}
-        res = _req("POST", "/post", body, timeout=120)
-        if res.get("status") == "error":
-            raise AyrshareError(json.dumps(res.get("errors") or res)[:400])
-        db.run("UPDATE posts SET status='scheduled', ayr_id=? WHERE id=?", (res.get("id"), post_id))
+        main = [p for p in plats if p != "reddit"]
+        title = (r["title"] or r["text"] or "New video")
+        when = {"scheduleDate": _iso(r["at"])} if r["at"] > time.time() + 120 else {}
+        ayr_id = r["ayr_id"]
+        if main and not ayr_id:
+            body = {"post": r["text"] or "", "platforms": main, "mediaUrls": [url], "isVideo": True,
+                    "idempotencyKey": f"reelscutter-{post_id}", **when}
+            if "youtube" in main:
+                body["youTubeOptions"] = {"title": title[:100],
+                                          "visibility": db.setting("youtube_visibility", "public"), "shorts": True}
+            res = _req("POST", "/post", body, timeout=120)
+            if res.get("status") == "error":
+                raise AyrshareError(json.dumps(res.get("errors") or res)[:400])
+            ayr_id = res.get("id")
+            db.run("UPDATE posts SET ayr_id=? WHERE id=?", (ayr_id, post_id))
+        if "reddit" in plats and not r["reddit_id"]:
+            sub = (db.setting("reddit_subreddit") or "").strip().removeprefix("r/").removeprefix("/r/").strip("/")
+            if not sub:
+                raise AyrshareError("Reddit needs a subreddit: set it in Auto-Posting settings")
+            body = {"post": r["text"] or title, "platforms": ["reddit"],
+                    "redditOptions": {"title": title[:300], "subreddit": sub, "link": url},
+                    "idempotencyKey": f"reelscutter-{post_id}-reddit", **when}
+            res = _req("POST", "/post", body, timeout=120)
+            if res.get("status") == "error":
+                raise AyrshareError("Reddit: " + json.dumps(res.get("errors") or res)[:400])
+            db.run("UPDATE posts SET reddit_id=? WHERE id=?", (res.get("id"), post_id))
+            ayr_id = ayr_id or res.get("id")
+        db.run("UPDATE posts SET status='scheduled', ayr_id=? WHERE id=?", (ayr_id, post_id))
         db.log("info", f"Post {post_id} scheduled for {datetime.fromtimestamp(r['at']):%a %d %b %H:%M} on "
-                       f"{', '.join(plats)}", r["job_id"])
+                       f"{', '.join(PLATFORMS.get(p, p) for p in plats)}", r["job_id"])
     except Exception as e:
         db.run("UPDATE posts SET status='failed', error=? WHERE id=?", (str(e)[:500], post_id))
         db.log("error", f"Posting failed for post {post_id}: {e}", r["job_id"])
@@ -146,11 +170,12 @@ def cancel(post_id):
     r = db.q1("SELECT * FROM posts WHERE id=?", (post_id,))
     if not r:
         return
-    if r["ayr_id"] and r["status"] == "scheduled" and r["at"] > time.time():
-        try:
-            _req("DELETE", "/post", {"id": r["ayr_id"]})
-        except AyrshareError as e:
-            db.log("warning", f"Couldn't delete post {post_id} on Ayrshare: {e}")
+    if r["status"] == "scheduled" and r["at"] > time.time():
+        for aid in {r["ayr_id"], r["reddit_id"]} - {None, ""}:
+            try:
+                _req("DELETE", "/post", {"id": aid})
+            except AyrshareError as e:
+                db.log("warning", f"Couldn't delete post {post_id} on Ayrshare: {e}")
     db.run("DELETE FROM posts WHERE id=?", (post_id,))
 
 
