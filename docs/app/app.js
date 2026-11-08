@@ -35,7 +35,151 @@ const settings = () => ({
   res: +$('res').value,
   mode: $('mode').value,
   skip: Math.max(0, +$('skip').value || 0),
+  caps: $('caps').value,
+  lang: $('lang').value,
 });
+
+// ---------- templates ----------
+const TEMPLATES = {
+  podcast: { len: 45, count: 5, framing: 'crop', mode: 'smart', caps: 'bold' },
+  talking: { len: 30, count: 6, framing: 'crop', mode: 'smart', caps: 'pop' },
+  gaming: { len: 30, count: 5, framing: 'crop', mode: 'smart', caps: 'clean' },
+  vlog: { len: 15, count: 8, framing: 'crop', mode: 'smart', caps: 'clean' },
+};
+function applyTemplate() {
+  const t = TEMPLATES[$('tpl').value];
+  if (!t) return;
+  $('len').value = t.len; $('count').value = t.count; $('framing').value = t.framing;
+  $('mode').value = t.mode; $('caps').value = t.caps;
+  renderClips();
+}
+
+// ---------- speech recognition (Whisper in a worker) ----------
+let worker = null, jobId = 0;
+const pending = new Map();
+function getWorker() {
+  if (worker) return worker;
+  worker = new Worker(new URL('./asr-worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = (ev) => {
+    const m = ev.data;
+    if (m.type === 'loading') setStatus(`Downloading the speech model (first time only)… ${Math.round(m.progress * 100)}%`);
+    else if (m.type === 'loaded') { /* model ready */ }
+    else if (pending.has(m.id)) {
+      const { res, rej } = pending.get(m.id); pending.delete(m.id);
+      m.type === 'result' ? res(m) : rej(new Error(m.message));
+    }
+  };
+  worker.onerror = (e) => { for (const { rej } of pending.values()) rej(new Error(e.message || 'speech worker failed')); pending.clear(); worker = null; };
+  return worker;
+}
+
+// Mono 16 kHz audio for [start, end) seconds of the source.
+async function clipAudio16k(start, end) {
+  const sink = new AudioBufferSink(state.at);
+  const chunks = []; let sr = 48000, n = 0;
+  for await (const { buffer, timestamp } of sink.buffers(start, end)) {
+    sr = buffer.sampleRate;
+    const a = buffer.getChannelData(0), b = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null;
+    const from = Math.max(0, Math.round((start - timestamp) * sr));
+    const to = Math.min(buffer.length, Math.round((end - timestamp) * sr));
+    if (to <= from) continue;
+    const m = new Float32Array(to - from);
+    for (let i = from; i < to; i++) m[i - from] = b ? (a[i] + b[i]) * 0.5 : a[i];
+    chunks.push(m); n += m.length;
+  }
+  const mono = new Float32Array(n); let o = 0;
+  for (const c of chunks) { mono.set(c, o); o += c.length; }
+  if (!n) return new Float32Array(0);
+  if (sr === 16000) return mono;
+  const len = Math.max(1, Math.round(n * 16000 / sr));
+  const ctx = new OfflineAudioContext(1, len, 16000);
+  const buf = ctx.createBuffer(1, n, sr); buf.copyToChannel(mono, 0);
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); src.start();
+  return (await ctx.startRendering()).getChannelData(0);
+}
+
+async function transcribeClip(c, lang) {
+  const audio = await clipAudio16k(c.start, c.end);
+  if (audio.length < 1600) return [];
+  const id = ++jobId;
+  const p = new Promise((res, rej) => pending.set(id, { res, rej }));
+  getWorker().postMessage({ id, audio, language: lang }, [audio.buffer]);
+  const r = await p;
+  return r.words;
+}
+
+// ---------- caption drawing ----------
+const FONT = '-apple-system, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+function groupWords(words, maxWords) {
+  const groups = []; let cur = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    cur.push(w);
+    const gap = words[i + 1] ? words[i + 1].start - w.end : 99;
+    if (cur.length >= maxWords || gap > 0.6 || /[.!?,]$/.test(w.text)) { groups.push(cur); cur = []; }
+  }
+  if (cur.length) groups.push(cur);
+  return groups.map((g, i) => ({ words: g, start: g[0].start, end: Math.max(g[g.length - 1].end, g[0].start + 0.4) }));
+}
+function wrapLines(ctx, items, maxW) {
+  const lines = [[]]; let w = 0;
+  const space = ctx.measureText(' ').width;
+  for (const it of items) {
+    const ww = ctx.measureText(it.text).width;
+    if (lines[lines.length - 1].length && w + space + ww > maxW) { lines.push([]); w = 0; }
+    const line = lines[lines.length - 1];
+    w += (line.length ? space : 0) + ww; line.push({ ...it, w: ww });
+  }
+  return lines.map((l) => ({ items: l, width: l.reduce((a, x) => a + x.w, 0) + space * (l.length - 1) }));
+}
+function drawCaption(ctx, W, H, groups, t, style) {
+  const g = groups.find((x, i) => t >= x.start - 0.05 && t < (groups[i + 1] ? Math.min(groups[i + 1].start, x.end + 0.6) : x.end + 0.6));
+  if (!g) return;
+  ctx.save();
+  ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  if (style === 'pop') {
+    const w = g.words.slice().reverse().find((x) => t >= x.start - 0.05) || g.words[0];
+    const age = Math.max(0, t - w.start);
+    const scale = 0.82 + 0.18 * Math.min(1, age / 0.12);
+    let size = Math.round(W * 0.115);
+    const text = w.text.replace(/^[,.!?]+|[,.]+$/g, '').toUpperCase();
+    ctx.font = `900 ${size}px ${FONT}`;
+    const tw = ctx.measureText(text).width;
+    if (tw > W * 0.88) { size = Math.floor(size * W * 0.88 / tw); ctx.font = `900 ${size}px ${FONT}`; }
+    ctx.translate(W / 2, H * 0.62); ctx.scale(scale, scale);
+    ctx.textAlign = 'center';
+    ctx.lineWidth = size * 0.16; ctx.strokeStyle = '#000'; ctx.strokeText(text, 0, 0);
+    ctx.fillStyle = '#fff'; ctx.fillText(text, 0, 0);
+  } else if (style === 'bold') {
+    const size = Math.round(W * 0.085);
+    ctx.font = `900 ${size}px ${FONT}`;
+    const items = g.words.map((w) => ({ text: w.text.toUpperCase(), on: t >= w.start - 0.05 && t < w.end + 0.05 }));
+    const lines = wrapLines(ctx, items, W * 0.86);
+    const lh = size * 1.18, y0 = H * 0.68 - (lines.length - 1) * lh / 2;
+    const space = ctx.measureText(' ').width;
+    ctx.textAlign = 'left';
+    lines.forEach((ln, li) => {
+      let x = (W - ln.width) / 2;
+      for (const it of ln.items) {
+        ctx.lineWidth = size * 0.17; ctx.strokeStyle = '#000'; ctx.strokeText(it.text, x, y0 + li * lh);
+        ctx.fillStyle = it.on ? '#FFE14D' : '#fff'; ctx.fillText(it.text, x, y0 + li * lh);
+        x += it.w + space;
+      }
+    });
+  } else {
+    const size = Math.round(W * 0.058);
+    ctx.font = `650 ${size}px ${FONT}`;
+    const lines = wrapLines(ctx, g.words.map((w) => ({ text: w.text })), W * 0.82);
+    const lh = size * 1.3, pad = size * 0.45;
+    const boxW = Math.max(...lines.map((l) => l.width)) + pad * 2, boxH = lines.length * lh + pad * 1.2;
+    const bx = (W - boxW) / 2, by = H * 0.8 - boxH / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, boxW, boxH, size * 0.4) : ctx.rect(bx, by, boxW, boxH); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    lines.forEach((ln, li) => ctx.fillText(ln.items.map((x) => x.text).join(' '), W / 2, by + pad * 0.6 + lh * (li + 0.5)));
+  }
+  ctx.restore();
+}
 
 function setBusy(b) {
   state.busy = b;
@@ -279,6 +423,27 @@ async function exportClip(c, s) {
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target: new BufferTarget() });
   const video = { width: outW, height: outH, codec: state.vcodec, quality: QUALITY_HIGH, forceTranscode: true, frameRate: 30 };
   if (s.framing === 'crop') { video.crop = cropFor(c.pos); video.fit = 'cover'; } else { video.fit = 'contain'; }
+  if (s.caps !== 'none' && state.at) {
+    if (!c.words) {
+      c.prog = 0; c.phase = 'Listening'; updateClipRow(c);
+      c.words = await transcribeClip(c, s.lang);
+      c.phase = null;
+    }
+    if (c.words.length) {
+      const groups = groupWords(c.words, s.caps === 'bold' ? 3 : s.caps === 'clean' ? 6 : 1);
+      const canvas = new OffscreenCanvas(outW, outH);
+      const ctx = canvas.getContext('2d');
+      let t0 = null;
+      video.process = (sample) => {
+        if (t0 === null) t0 = sample.timestamp >= c.start - 0.5 ? c.start : 0;   // input or output timeline
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH);
+        sample.draw(ctx, 0, 0, outW, outH);
+        drawCaption(ctx, outW, outH, groups, sample.timestamp - t0, s.caps);
+        return canvas;
+      };
+      video.processedWidth = outW; video.processedHeight = outH;
+    }
+  }
   const conv = await Conversion.init({
     input: state.input, output, tracks: 'primary', trim: { start: c.start, end: c.end },
     video, audio: { codec: state.acodec, bitrate: 160000, numberOfChannels: 2, sampleRate: 48000 }, showWarnings: false,
@@ -375,7 +540,7 @@ function updateClipRow(c) {
   const out = row.querySelector('.out');
   out.innerHTML = '';
   if (c.prog !== null && c.prog !== undefined) {
-    out.textContent = `Making… ${Math.round(c.prog * 100)}%`;
+    out.textContent = c.phase ? `${c.phase} for captions…` : `Making… ${Math.round(c.prog * 100)}%`;
   } else if (c.err) {
     const e = document.createElement('span'); e.className = 'err'; e.textContent = `Failed: ${c.err}`; out.appendChild(e);
   } else if (c.url) {
@@ -393,6 +558,11 @@ function updateClipRow(c) {
     v.href = '#'; v.textContent = 'Watch'; v.style.marginLeft = '12px';
     v.onclick = (ev) => { ev.preventDefault(); const p = $('player'); p.dataset.orig = p.dataset.orig || p.src; p.src = c.url; p.play().catch(() => {}); };
     out.append(a, v);
+  }
+  if (c.words && c.words.length) {
+    const said = document.createElement('div'); said.className = 'said';
+    said.textContent = '“' + c.words.map((w) => w.text).join(' ').slice(0, 220) + (c.words.length > 40 ? '…”' : '”');
+    out.appendChild(said);
   }
 }
 
@@ -438,9 +608,13 @@ $('find').addEventListener('click', findClips);
 $('exportAll').addEventListener('click', exportSelected);
 $('cancel').addEventListener('click', () => { state.stop = true; state.conversion?.cancel(); });
 $('framing').addEventListener('change', renderClips);
+$('tpl').addEventListener('change', applyTemplate);
+for (const id of ['len', 'count', 'framing', 'mode', 'caps']) $(id).addEventListener('input', () => { $('tpl').value = 'custom'; });
+$('lang').addEventListener('change', () => state.clips.forEach((c) => { c.words = null; }));
 window.addEventListener('resize', drawWave);
 
 // When this page runs inside a claude.ai artifact, downloads go through the viewer's save prompt.
 if (window.claude?.use) window.claude.use('downloads').then((d) => { state.dl = d; }).catch(() => {});
+applyTemplate();
 checkSupport().then((ok) => { if (!ok) $('drop').classList.add('hidden'); });
 window.__reels = state;  // handy for debugging in the console

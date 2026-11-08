@@ -54,6 +54,7 @@
   .clip .ctl{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
   .clip input[type=range]{width:120px}
   .clip .out a{color:var(--good);font-weight:600;font-size:13px}
+  .clip .said{font-size:12.5px;color:var(--text);opacity:.85;margin-top:4px;overflow-wrap:anywhere}
   .clip .err{color:var(--bad);font-size:12.5px}
   .note{border-left:3px solid var(--warn);padding:10px 14px;background:rgba(245,185,74,.07);border-radius:6px;font-size:13.5px;margin-top:16px}
   .hidden{display:none!important}
@@ -88,6 +89,15 @@
 
     <div class="panel">
       <h2>Settings</h2>
+      <label class="f" style="margin-bottom:12px">Template
+        <select id="tpl">
+          <option value="custom">Custom (my own settings)</option>
+          <option value="podcast">Podcast: 45 s clips, bold captions</option>
+          <option value="talking" selected>Talking head: 30 s clips, word-pop captions</option>
+          <option value="gaming">Gaming: 30 s clips, clean captions</option>
+          <option value="vlog">Vlog: 15 s clips, clean captions</option>
+        </select>
+      </label>
       <div class="form">
         <label class="f">Clip length
           <select id="len"><option value="15">15 seconds</option><option value="30" selected>30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></select>
@@ -107,6 +117,12 @@
         <label class="f">Skip the start / end (sec)
           <input id="skip" type="number" min="0" max="600" value="5">
         </label>
+        <label class="f">Captions
+          <select id="caps"><option value="pop" selected>Word pop (one word at a time)</option><option value="bold">Bold (3 words, highlight)</option><option value="clean">Clean (line on a dark box)</option><option value="none">No captions</option></select>
+        </label>
+        <label class="f">Spoken language
+          <select id="lang"><option value="auto" selected>Detect automatically</option><option value="english">English</option><option value="spanish">Spanish</option><option value="french">French</option><option value="portuguese">Portuguese</option><option value="german">German</option><option value="arabic">Arabic</option><option value="hindi">Hindi</option></select>
+        </label>
       </div>
       <div class="row" style="margin-top:14px">
         <button id="find" class="btn primary">Find clips</button>
@@ -123,8 +139,8 @@
     <div class="clips" id="clips"></div>
   </div>
 
-  <div class="note">The web version cuts, reframes and scores clips. Captions, face tracking, batch jobs and the quality checks are in the <a href="../#download">Mac app</a>.</div>
-  <footer>Made with <a href="https://mediabunny.dev">Mediabunny</a> (MPL-2.0). Your files stay on your computer.</footer>
+  <div class="note">The web version cuts, scores and captions clips. The first time you use captions it downloads a 77 MB speech model, which then stays in your browser. Face tracking, batch jobs and the quality checks are in the <a href="../#download">Mac app</a>.</div>
+  <footer>Made with <a href="https://mediabunny.dev">Mediabunny</a> (MPL-2.0), <a href="https://github.com/huggingface/transformers.js">Transformers.js</a> (Apache-2.0) and OpenAI Whisper (MIT). Your files stay on your computer.</footer>
 </div>
 <script type="module" src="app.js"></script>
 </body>

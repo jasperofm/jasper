@@ -9,3 +9,4 @@ desktop/dist/
 desktop/packaging/ReelsCutter.icns
 __pycache__/
 *.pyc
+docs/app/vendor/transformers.min.js
