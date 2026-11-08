@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ARCH=$(uname -m)
 python3 -m pip install --upgrade pip wheel
-python3 -m pip install -r requirements-app.txt pyinstaller
+python3 -m pip install --only-binary opencv-python-headless -r requirements-app.txt pyinstaller   # never compile OpenCV from source (Intel Macs)
 python3 -m pip install faster-whisper || echo "::warning::faster-whisper not available for $ARCH; building without speech recognition"
 # icon
 mkdir -p build/icon.iconset
