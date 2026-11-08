@@ -31,6 +31,9 @@ jobs:
       - name: Jasper Bot test (scripted stand-in for Claude)
         working-directory: desktop
         run: QT_QPA_PLATFORM=offscreen python tests/test_bot.py
+      - name: Timeline Editor test (first frame, mark, save, export)
+        working-directory: desktop
+        run: QT_QPA_PLATFORM=offscreen python tests/test_editor.py
   build:
     needs: test-linux
     strategy:
@@ -46,6 +49,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: bash desktop/packaging/build_mac.sh
+      - name: Built app plays video (first frames decode in the bundled player)
+        run: QT_QPA_PLATFORM=offscreen "desktop/dist/Reels Cutter.app/Contents/MacOS/Reels Cutter" --playtest
       - uses: actions/upload-artifact@v4
         with:
           name: ReelsCutter-${{ matrix.runner }}

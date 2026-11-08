@@ -105,12 +105,23 @@ class Player(QWidget):
         self.player.durationChanged.connect(self._on_dur)
         self.player.playbackStateChanged.connect(self._on_state)
         self.player.errorOccurred.connect(lambda e, msg: self.time.setText(f"Can't play this file: {msg}"))
+        # Show the first frame as soon as a video is opened (Qt shows nothing until playback starts otherwise):
+        # play muted until one frame arrives, then pause at the start.
+        self._prime = False
+        self._prime_muted = False
+        self.player.mediaStatusChanged.connect(self._on_status)
+        try:
+            self.video.videoSink().videoFrameChanged.connect(self._on_frame)
+        except Exception:
+            pass
+        self.frames_shown = 0
 
     # ---- API
     def load(self, path, fps=None):
         self.stop_at = None
         self.fps = fps or 30.0
         self.player.stop()
+        self._prime = bool(path)
         self.player.setSource(QUrl.fromLocalFile(str(path)) if path else QUrl())
 
     def unload(self):
@@ -118,6 +129,8 @@ class Player(QWidget):
         self.player.setSource(QUrl())
 
     def toggle(self):
+        if self._prime:
+            self._end_prime()
         if self.player.playbackState() == QMediaPlayer.PlayingState:
             self.player.pause()
         else:
@@ -158,6 +171,24 @@ class Player(QWidget):
             self.video.setFocus()
 
     # ---- internals
+    def _on_status(self, st):
+        if self._prime and st in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferedMedia) \
+                and self.player.playbackState() != QMediaPlayer.PlayingState:
+            self._prime_muted = self.audio.isMuted()
+            self.audio.setMuted(True)
+            self.player.play()
+
+    def _on_frame(self, frame):
+        self.frames_shown += 1
+        if self._prime and frame.isValid():
+            self._end_prime()
+            self.player.pause()
+            self.player.setPosition(0)
+
+    def _end_prime(self):
+        self._prime = False
+        self.audio.setMuted(self._prime_muted)
+
     def _scrub_done(self):
         self._scrubbing = False
         self.player.setPosition(self.scrub.value())

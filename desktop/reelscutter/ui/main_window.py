@@ -233,7 +233,13 @@ class MainWindow(QMainWindow):
         if key == "projects":
             w.check_health()
         if key == "editor":
-            self.p["editor"].reload_presets()
+            ed = self.p["editor"]
+            ed.reload_presets()
+            ed.reload_videos()
+            if not ed.vid:                      # open the newest video so there is always something to see
+                r = db.q1("SELECT id FROM videos ORDER BY added_at DESC LIMIT 1")
+                if r:
+                    ed.open_video(r["id"])
         if key == "settings":
             self.p["settings"].load()
 
