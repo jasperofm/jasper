@@ -57,6 +57,22 @@
   .clip .said{font-size:12.5px;color:var(--text);opacity:.85;margin-top:4px;overflow-wrap:anywhere}
   .clip .err{color:var(--bad);font-size:12.5px}
   .note{border-left:3px solid var(--warn);padding:10px 14px;background:rgba(245,185,74,.07);border-radius:6px;font-size:13.5px;margin-top:16px}
+  .toggles{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;font-size:13.5px}
+  .toggles label{display:flex;gap:6px;align-items:center;cursor:pointer}
+  input[type=text]{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font:inherit;width:100%;min-width:0}
+  input[type=color]{width:100%;height:38px;border:1px solid var(--border);border-radius:8px;background:var(--panel2);padding:2px}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:18px;margin-top:18px;align-items:start}
+  details.panel summary{cursor:pointer;list-style:none}
+  details.panel summary::-webkit-details-marker{display:none}
+  .clip .hook{margin-top:6px;display:flex;gap:6px;align-items:center}
+  .clip .hook input{padding:5px 8px;font-size:13px}
+  .clip .post{font-size:12.5px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+  .rep{display:flex;flex-direction:column;gap:14px;margin-top:12px}
+  .rep h3{font-size:14px;margin:0 0 6px}
+  .rep textarea{width:100%;min-height:120px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical}
+  .slides{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+  .slides canvas{width:160px;height:200px;border-radius:8px;flex:none;border:1px solid var(--border)}
+  #logoPreview img{max-height:48px;max-width:160px}
   .hidden{display:none!important}
   footer{margin-top:40px;color:var(--muted);font-size:13px}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -112,7 +128,7 @@
           <select id="res"><option value="1080">1080 × 1920 (best)</option><option value="720" selected>720 × 1280 (faster)</option></select>
         </label>
         <label class="f">Look for
-          <select id="mode"><option value="smart" selected>Best moments (sound + scene changes)</option><option value="audio">Loudest moments (sound only)</option><option value="even">Evenly spaced</option></select>
+          <select id="mode"><option value="viral">Best things said (reads the whole talk)</option><option value="smart" selected>Best moments (sound + scene changes)</option><option value="audio">Loudest moments (sound only)</option><option value="even">Evenly spaced</option></select>
         </label>
         <label class="f">Skip the start / end (sec)
           <input id="skip" type="number" min="0" max="600" value="5">
@@ -120,10 +136,21 @@
         <label class="f">Captions
           <select id="caps"><option value="pop" selected>Word pop (one word at a time)</option><option value="bold">Bold (3 words, highlight)</option><option value="clean">Clean (line on a dark box)</option><option value="none">No captions</option></select>
         </label>
+        <label class="f">Caption language
+          <select id="capLang"><option value="same" selected>Same as spoken</option><option value="English">English</option><option value="Spanish">Spanish</option><option value="Portuguese">Portuguese</option><option value="French">French</option><option value="German">German</option><option value="Italian">Italian</option><option value="Arabic">Arabic</option><option value="Hindi">Hindi</option><option value="Japanese">Japanese</option></select>
+        </label>
         <label class="f">Spoken language
           <select id="lang"><option value="auto" selected>Detect automatically</option><option value="english">English</option><option value="spanish">Spanish</option><option value="french">French</option><option value="portuguese">Portuguese</option><option value="german">German</option><option value="arabic">Arabic</option><option value="hindi">Hindi</option></select>
         </label>
       </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="optHook" checked> Hook title (first 2 s)</label>
+        <label><input type="checkbox" id="optEmoji" checked> Emojis on key words</label>
+        <label><input type="checkbox" id="optZoom" checked> Zoom on emphasis</label>
+        <label><input type="checkbox" id="optJump"> Cut pauses (jump cuts)</label>
+        <label><input type="checkbox" id="optLogo" checked> Logo / handle</label>
+      </div>
+      <div class="small muted" id="aiState" style="margin-top:8px"></div>
       <div class="row" style="margin-top:14px">
         <button id="find" class="btn primary">Find clips</button>
         <button id="exportAll" class="btn" disabled>Make selected clips</button>
@@ -139,7 +166,38 @@
     <div class="clips" id="clips"></div>
   </div>
 
-  <div class="note">The web version cuts, scores and captions clips. The first time you use captions it downloads a 77 MB speech model, which then stays in your browser. Face tracking, batch jobs and the quality checks are in the <a href="../#download">Mac app</a>.</div>
+  <div class="grid2">
+    <details class="panel" id="brandPanel">
+      <summary><h2 style="display:inline">Brand kit</h2> <span class="muted small">logo, color, font, handle</span></summary>
+      <div class="form" style="margin-top:12px">
+        <label class="f">Logo (PNG with transparency works best)
+          <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+        </label>
+        <label class="f">Logo or handle position
+          <select id="logoPos"><option value="tr">Top right</option><option value="tl">Top left</option><option value="br">Bottom right</option><option value="bl">Bottom left</option></select>
+        </label>
+        <label class="f">Your handle (shown when there's no logo)
+          <input type="text" id="handle" placeholder="@yourname" maxlength="40">
+        </label>
+        <label class="f">Accent color (hook box, word highlight)
+          <input type="color" id="accent" value="#FFE14D">
+        </label>
+        <label class="f">Caption font
+          <select id="font"><option value="system">Modern (system bold)</option><option value="impact">Impact (classic meme)</option><option value="rounded">Rounded</option><option value="serif">Serif</option><option value="mono">Typewriter</option></select>
+        </label>
+        <div class="f"><span>Logo preview</span><div id="logoPreview" class="small muted">No logo yet</div><button class="btn sm" id="logoClear" type="button">Remove logo</button></div>
+      </div>
+      <p class="small muted">Saved in this browser only.</p>
+    </details>
+    <details class="panel" id="repPanel">
+      <summary><h2 style="display:inline">Repurpose</h2> <span class="muted small">carousel, X thread, YouTube description</span></summary>
+      <p class="small muted" style="margin-top:10px">Turns what's said in the whole video into posts. Needs the transcript, so it listens to the full video first.</p>
+      <div class="row"><button class="btn" id="repGo" type="button">Make posts from this video</button></div>
+      <div id="repOut" class="rep"></div>
+    </details>
+  </div>
+
+  <div class="note">The web version finds, cuts, captions and brands clips. The first time you use captions it downloads a 77 MB speech model, which then stays in your browser. AI ranking, hook writing and translation work when you open this page in Claude. Face tracking, batch jobs, auto-posting and the quality checks are in the <a href="../#download">Mac app</a>.</div>
   <footer>Made with <a href="https://mediabunny.dev">Mediabunny</a> (MPL-2.0), <a href="https://github.com/huggingface/transformers.js">Transformers.js</a> (Apache-2.0) and OpenAI Whisper (MIT). Your files stay on your computer.</footer>
 </div>
 <script type="module" src="app.js"></script>

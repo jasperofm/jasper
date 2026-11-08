@@ -1,8 +1,9 @@
 // Reels Cutter Web: finds good moments in a long video and exports vertical clips, all inside the browser.
 import {
   Input, Output, Conversion, BlobSource, BufferTarget, Mp4OutputFormat, ALL_FORMATS,
-  AudioBufferSink, CanvasSink, QUALITY_HIGH, canEncodeVideo, canEncodeAudio,
+  AudioBufferSink, CanvasSink, QUALITY_HIGH, canEncodeVideo, canEncodeAudio, VideoSample,
 } from './vendor/mediabunny.min.mjs';
+import * as F from './features.js';
 
 const $ = (id) => document.getElementById(id);
 const BIN = 0.5;                       // seconds per loudness bin
@@ -11,6 +12,7 @@ const state = {
   file: null, input: null, vt: null, at: null, duration: 0,
   db: [], cuts: [], clips: [], busy: false, stop: false, conversion: null,
   vcodec: 'avc', acodec: 'aac',
+  transcript: null, brand: F.loadBrand(), logoImg: null, ai: false,
 };
 
 // ---------- helpers ----------
@@ -37,20 +39,27 @@ const settings = () => ({
   skip: Math.max(0, +$('skip').value || 0),
   caps: $('caps').value,
   lang: $('lang').value,
+  capLang: $('capLang').value,
+  hook: $('optHook').checked,
+  emoji: $('optEmoji').checked,
+  zoom: $('optZoom').checked,
+  jump: $('optJump').checked,
+  logo: $('optLogo').checked,
 });
 
 // ---------- templates ----------
 const TEMPLATES = {
-  podcast: { len: 45, count: 5, framing: 'crop', mode: 'smart', caps: 'bold' },
-  talking: { len: 30, count: 6, framing: 'crop', mode: 'smart', caps: 'pop' },
-  gaming: { len: 30, count: 5, framing: 'crop', mode: 'smart', caps: 'clean' },
-  vlog: { len: 15, count: 8, framing: 'crop', mode: 'smart', caps: 'clean' },
+  podcast: { len: 45, count: 5, framing: 'crop', mode: 'viral', caps: 'bold', jump: true, zoom: true, emoji: false, hook: true },
+  talking: { len: 30, count: 6, framing: 'crop', mode: 'viral', caps: 'pop', jump: true, zoom: true, emoji: true, hook: true },
+  gaming: { len: 30, count: 5, framing: 'crop', mode: 'smart', caps: 'clean', jump: false, zoom: false, emoji: true, hook: true },
+  vlog: { len: 15, count: 8, framing: 'crop', mode: 'smart', caps: 'clean', jump: false, zoom: true, emoji: true, hook: true },
 };
 function applyTemplate() {
   const t = TEMPLATES[$('tpl').value];
   if (!t) return;
   $('len').value = t.len; $('count').value = t.count; $('framing').value = t.framing;
   $('mode').value = t.mode; $('caps').value = t.caps;
+  $('optJump').checked = t.jump; $('optZoom').checked = t.zoom; $('optEmoji').checked = t.emoji; $('optHook').checked = t.hook;
   renderClips();
 }
 
@@ -108,8 +117,36 @@ async function transcribeClip(c, lang) {
   return r.words;
 }
 
+// Transcribe [from, to) of the source in 60-second pieces; word times are absolute (source timeline).
+async function transcribeRange(from, to, lang, onProg) {
+  const words = [];
+  const STEP = 60;
+  for (let t = from; t < to; t += STEP) {
+    if (state.stop) throw new Error('stopped');
+    const e = Math.min(to, t + STEP + 1);       // 1 s overlap so words on the boundary aren't lost
+    const audio = await clipAudio16k(t, e);
+    if (audio.length >= 1600) {
+      const id = ++jobId;
+      const p = new Promise((res, rej) => pending.set(id, { res, rej }));
+      getWorker().postMessage({ id, audio, language: lang }, [audio.buffer]);
+      const r = await p;
+      for (const w of r.words) {
+        const ws = w.start + t, we = w.end + t;
+        if (words.length && ws < words[words.length - 1].end - 0.05) continue;   // overlap duplicate
+        words.push({ text: w.text, start: ws, end: we });
+      }
+    }
+    onProg?.(Math.min(1, (e - from) / (to - from)));
+  }
+  return words;
+}
+const clipWords = (c) => (state.transcript || [])
+  .filter((w) => w.start >= c.start - 0.05 && w.end <= c.end + 0.3)
+  .map((w) => ({ text: w.text, start: w.start - c.start, end: w.end - c.start }));
+
 // ---------- caption drawing ----------
-const FONT = '-apple-system, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+let FONT = F.FONTS.system;
+let ACCENT = '#FFE14D';
 function groupWords(words, maxWords) {
   const groups = []; let cur = [];
   for (let i = 0; i < words.length; i++) {
@@ -133,8 +170,12 @@ function wrapLines(ctx, items, maxW) {
   return lines.map((l) => ({ items: l, width: l.reduce((a, x) => a + x.w, 0) + space * (l.length - 1) }));
 }
 function drawCaption(ctx, W, H, groups, t, style) {
-  const g = groups.find((x, i) => t >= x.start - 0.05 && t < (groups[i + 1] ? Math.min(groups[i + 1].start, x.end + 0.6) : x.end + 0.6));
+  let g = groups.find((x, i) => t >= x.start - 0.05 && t < (groups[i + 1] ? Math.min(groups[i + 1].start, x.end + 0.6) : x.end + 0.6));
   if (!g) return;
+  if (g.translated) {           // translated line: no per-word timing, so show the whole line
+    style = style === 'pop' ? 'bold' : style;
+    g = { ...g, words: g.translated.split(/\s+/).map((text) => ({ text, start: -1, end: -1 })) };
+  }
   ctx.save();
   ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
   if (style === 'pop') {
@@ -162,7 +203,7 @@ function drawCaption(ctx, W, H, groups, t, style) {
       let x = (W - ln.width) / 2;
       for (const it of ln.items) {
         ctx.lineWidth = size * 0.17; ctx.strokeStyle = '#000'; ctx.strokeText(it.text, x, y0 + li * lh);
-        ctx.fillStyle = it.on ? '#FFE14D' : '#fff'; ctx.fillText(it.text, x, y0 + li * lh);
+        ctx.fillStyle = it.on ? ACCENT : '#fff'; ctx.fillText(it.text, x, y0 + li * lh);
         x += it.w + space;
       }
     });
@@ -206,7 +247,8 @@ async function checkSupport() {
 async function loadFile(file) {
   if (!file || state.busy) return;
   state.file = file;
-  state.clips = []; state.db = []; state.cuts = [];
+  state.clips = []; state.db = []; state.cuts = []; state.transcript = null;
+  $('repOut').innerHTML = '';
   renderClips();
   $('results').classList.add('hidden');
   $('work').classList.remove('hidden');
@@ -380,6 +422,10 @@ function pickClips(s) {
   return chosen.sort((a, b) => a.start - b.start);
 }
 
+async function F_transcribeAll(s, onProg) {
+  return transcribeRange(Math.max(0, s.skip - 1), Math.min(state.duration, state.duration - s.skip + 1), s.lang, onProg);
+}
+
 async function findClips() {
   if (!state.input || state.busy) return;
   const s = settings();
@@ -396,7 +442,34 @@ async function findClips() {
         state.cuts = await scanScenes((f) => setProg(0.5 + f * 0.5));
       }
     }
-    state.clips = pickClips(s).map((c, i) => ({ ...c, n: i + 1, on: true, pos: 0.5, url: null, err: null }));
+    let picked;
+    if (s.mode === 'viral') {
+      if (!state.at) throw new Error('This video has no sound, so there is nothing to read. Pick “Best moments” instead.');
+      if (!state.transcript) {
+        setStatus('Listening to everything that’s said… (this takes a while for long videos)');
+        state.transcript = await F_transcribeAll(s, (f) => { setProg(f); setStatus(`Listening to everything that’s said… ${Math.round(f * 100)}%`); });
+      }
+      const cands = F.transcriptCandidates(state.transcript, { len: s.len, skip: s.skip, duration: state.duration, db: state.db, binSec: BIN });
+      if (!cands.length) throw new Error('Not enough speech found for that clip length. Try a shorter length or “Best moments”.');
+      let pool = F.pickNonOverlapping(cands, Math.min(30, s.count * 3));
+      const ai = await F.aiRank(pool, s.count, setStatus);
+      if (ai) {
+        const rated = new Map(ai.ratings.map((r) => [r.id, r]));
+        pool = pool.map((c, i) => ({ ...c, ai: rated.get(i), score: 0.35 * c.score + 0.65 * ((rated.get(i)?.score ?? 0) / 10) }));
+        for (const b of ai.best || []) if (pool[b.id]) Object.assign(pool[b.id], { hook: b.hook, caption: b.caption, hashtags: b.hashtags });
+      }
+      const best = F.pickNonOverlapping(pool, s.count);
+      const top = Math.max(...best.map((c) => c.score), 0.01);
+      picked = best.sort((a, b) => a.start - b.start).map((c) => ({
+        start: Math.max(0, c.start - 0.15), end: Math.min(state.duration, c.end + 0.35),
+        score: Math.round(100 * c.score / top),
+        why: (c.ai ? `AI ${c.ai.score}/10: ${c.ai.reason || ''} · ` : '') + c.why,
+        hook: c.hook || null, caption: c.caption || null, hashtags: c.hashtags || null,
+      }));
+    } else {
+      picked = pickClips(s);
+    }
+    state.clips = picked.map((c, i) => ({ ...c, n: i + 1, on: true, pos: 0.5, url: null, err: null }));
     setProg(1);
     setStatus(state.clips.length ? `Found ${state.clips.length} clip${state.clips.length > 1 ? 's' : ''}. Untick any you don’t want, then press “Make selected clips”.`
       : 'No clips fit. Try a shorter clip length or a smaller skip.');
@@ -418,35 +491,98 @@ function cropFor(pos) {
   return { left: Math.min(left, W - cw), top: Math.max(0, top), width: cw, height: ch };
 }
 
+async function ensureWords(c, s) {
+  if (c.words) return c.words;
+  if (state.transcript) { c.words = clipWords(c); return c.words; }
+  c.prog = 0; c.phase = 'Listening'; updateClipRow(c);
+  c.words = await transcribeClip(c, s.lang);
+  c.phase = null;
+  return c.words;
+}
+
 async function exportClip(c, s) {
   const outW = s.res === 1080 ? 1080 : 720, outH = s.res === 1080 ? 1920 : 1280;
+  const L = c.end - c.start;
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target: new BufferTarget() });
   const video = { width: outW, height: outH, codec: state.vcodec, quality: QUALITY_HIGH, forceTranscode: true, frameRate: 30 };
   if (s.framing === 'crop') { video.crop = cropFor(c.pos); video.fit = 'cover'; } else { video.fit = 'contain'; }
-  if (s.caps !== 'none' && state.at) {
-    if (!c.words) {
-      c.prog = 0; c.phase = 'Listening'; updateClipRow(c);
-      c.words = await transcribeClip(c, s.lang);
-      c.phase = null;
+
+  const needWords = state.at && (s.caps !== 'none' || s.hook || s.zoom || s.jump || s.emoji);
+  const words = needWords ? await ensureWords(c, s) : [];
+  FONT = F.FONTS[state.brand.font] || F.FONTS.system;
+  ACCENT = state.brand.accent || '#FFE14D';
+
+  // Hook title: AI-written when available, otherwise from the first sentence.
+  if (s.hook && !c.hook && words.length) {
+    const w = await F.aiWrite([words.map((x) => x.text).join(' ')]);
+    if (w?.[0]) Object.assign(c, { hook: w[0].hook, caption: c.caption || w[0].caption, hashtags: c.hashtags || w[0].hashtags });
+    else c.hook = F.heuristicHook(words.map((x) => x.text).join(' '));
+    renderClips();
+  }
+
+  // Captions (optionally translated, per line).
+  let groups = [];
+  if (s.caps !== 'none' && words.length) {
+    groups = groupWords(words, s.caps === 'bold' ? 3 : s.caps === 'clean' ? 6 : 1);
+    if (s.capLang !== 'same') {
+      const lineGroups = groupWords(words, 6);
+      const tr = await F.aiTranslate(lineGroups.map((g) => g.words.map((w) => w.text).join(' ')), s.capLang);
+      if (tr) { groups = lineGroups.map((g, i) => ({ ...g, translated: tr[i] })); c.note = `Captions translated to ${s.capLang}.`; }
+      else c.note = 'Translation needs AI, which works when this page is opened in Claude. Captions kept in the spoken language.';
     }
-    if (c.words.length) {
-      const groups = groupWords(c.words, s.caps === 'bold' ? 3 : s.caps === 'clean' ? 6 : 1);
-      const canvas = new OffscreenCanvas(outW, outH);
-      const ctx = canvas.getContext('2d');
-      let t0 = null;
-      video.process = (sample) => {
-        if (t0 === null) t0 = sample.timestamp >= c.start - 0.5 ? c.start : 0;   // input or output timeline
-        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH);
-        sample.draw(ctx, 0, 0, outW, outH);
-        drawCaption(ctx, outW, outH, groups, sample.timestamp - t0, s.caps);
-        return canvas;
-      };
-      video.processedWidth = outW; video.processedHeight = outH;
-    }
+  }
+  const marks = s.zoom ? F.zoomPlan(words, (t) => state.db[Math.floor((c.start + t) / BIN)] ?? -60) : [];
+  let segs = s.jump && words.length ? F.keepSegments(words, L) : null;
+  if (segs && F.keptLength(segs) > L - 0.4) segs = null;               // nothing worth cutting
+  const emojiWords = s.emoji ? words.map((w) => ({ ...w, e: F.emojiFor(w.text) })).filter((w) => w.e) : [];
+  const logo = s.logo && (state.logoImg || state.brand.handle);
+
+  const draws = groups.length || s.hook || marks.length || segs || emojiWords.length || logo;
+  if (draws) {
+    const canvas = new OffscreenCanvas(outW, outH);
+    const ctx = canvas.getContext('2d');
+    let t0 = null;
+    video.process = (sample) => {
+      if (t0 === null) t0 = sample.timestamp >= c.start - 0.5 ? c.start : 0;   // input or output timeline
+      const t = sample.timestamp - t0;                                          // seconds into the clip
+      const tOut = segs ? F.mapTime(t, segs) : t;
+      if (tOut === null) return null;                                           // inside a removed pause
+      const z = marks.length ? F.zoomAt(t, marks) : 1;
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH);
+      sample.draw(ctx, -(z - 1) * outW / 2, -(z - 1) * outH * 0.42, outW * z, outH * z);
+      if (groups.length) drawCaption(ctx, outW, outH, groups, t, s.caps);
+      if (emojiWords.length) {
+        const ew = emojiWords.filter((w) => t >= w.start && t < w.start + 1.2).pop();
+        if (ew) F.drawEmoji(ctx, outW, outH, ew.e, t - ew.start, outH * (s.caps === 'clean' ? 0.66 : s.caps === 'bold' ? 0.56 : 0.5));
+      }
+      if (s.hook && c.hook) F.drawHook(ctx, outW, outH, c.hook, tOut, state.brand);
+      if (logo) F.drawLogo(ctx, outW, outH, state.logoImg, state.brand.logoPos || 'tr', state.brand.handle);
+      return segs ? new VideoSample(canvas, { timestamp: t0 + tOut, duration: sample.duration }) : canvas;
+    };
+    video.processedWidth = outW; video.processedHeight = outH;
+  }
+  const audio = { codec: state.acodec, bitrate: 160000, numberOfChannels: 2, sampleRate: 48000 };
+  if (segs) {
+    let ta0 = null;
+    audio.process = (sample) => {
+      if (ta0 === null) ta0 = sample.timestamp >= c.start - 0.5 ? c.start : 0;
+      const t = sample.timestamp - ta0, d = sample.duration, sr = sample.sampleRate;
+      const out = [];
+      for (const [a, b] of segs) {
+        const from = Math.max(a, t), to = Math.min(b, t + d);
+        if (to - from < 1 / sr) continue;
+        const f0 = Math.round((from - t) * sr), f1 = Math.min(sample.numberOfFrames, Math.round((to - t) * sr));
+        if (f1 <= f0) continue;
+        const piece = sample.trim(f0, f1);
+        piece.setTimestamp(ta0 + F.mapTime(from, segs));
+        out.push(piece);
+      }
+      return out.length ? out : null;
+    };
   }
   const conv = await Conversion.init({
     input: state.input, output, tracks: 'primary', trim: { start: c.start, end: c.end },
-    video, audio: { codec: state.acodec, bitrate: 160000, numberOfChannels: 2, sampleRate: 48000 }, showWarnings: false,
+    video, audio, showWarnings: false,
   });
   if (!conv.isValid) {
     throw new Error('this video can’t be converted in the browser (' + conv.discardedTracks.map((d) => d.reason).join(', ') + ')');
@@ -460,6 +596,7 @@ async function exportClip(c, s) {
   c.url = URL.createObjectURL(blob);
   c.blob = blob;
   c.size = blob.size;
+  c.outLen = segs ? F.keptLength(segs) : L;
 }
 
 async function exportSelected() {
@@ -519,7 +656,14 @@ function renderClips() {
     if (c.score !== null) { sc.className = 'score' + (c.score < 70 ? ' mid' : ''); sc.textContent = c.score; sc.title = 'Score compared with the best moment in this video'; }
     const why = document.createElement('div'); why.className = 'why'; why.textContent = c.why;
     const out = document.createElement('div'); out.className = 'out small';
-    mid.append(t, sc, why, out);
+    const hk = document.createElement('div'); hk.className = 'hook';
+    const hl = document.createElement('span'); hl.className = 'small muted'; hl.textContent = 'Hook';
+    const hi = document.createElement('input'); hi.type = 'text'; hi.id = `hook${c.n}`; hi.maxLength = 60;
+    hi.placeholder = 'Written for you when the clip is made'; hi.value = c.hook || '';
+    hi.setAttribute('aria-label', `Hook title for clip ${c.n}`);
+    hi.oninput = () => { c.hook = hi.value.trim() || null; };
+    hk.append(hl, hi);
+    mid.append(t, sc, why, hk, out);
     const ctl = document.createElement('div'); ctl.className = 'ctl';
     if ($('framing').value === 'crop') {
       const lab = document.createElement('label'); lab.className = 'small muted'; lab.textContent = 'Frame ';
@@ -558,6 +702,24 @@ function updateClipRow(c) {
     v.href = '#'; v.textContent = 'Watch'; v.style.marginLeft = '12px';
     v.onclick = (ev) => { ev.preventDefault(); const p = $('player'); p.dataset.orig = p.dataset.orig || p.src; p.src = c.url; p.play().catch(() => {}); };
     out.append(a, v);
+  }
+  if (c.caption || c.hashtags) {
+    const post = document.createElement('div'); post.className = 'post';
+    const txt = `${c.caption || ''} ${(c.hashtags || []).join(' ')}`.trim();
+    post.textContent = `Post text: ${txt} `;
+    const cp = document.createElement('a'); cp.href = '#'; cp.textContent = 'Copy';
+    cp.onclick = async (ev) => {
+      ev.preventDefault();
+      try { await navigator.clipboard.writeText(txt); cp.textContent = 'Copied'; }
+      catch { const r = document.createRange(); r.selectNodeContents(post); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    };
+    post.appendChild(cp); out.appendChild(post);
+  }
+  if (c.note) { const n = document.createElement('div'); n.className = 'post'; n.textContent = c.note; out.appendChild(n); }
+  if (c.url && c.outLen && c.outLen < c.end - c.start - 0.4) {
+    const n = document.createElement('div'); n.className = 'post';
+    n.textContent = `Jump cuts removed ${(c.end - c.start - c.outLen).toFixed(1)} s of pauses (${fmt(c.outLen)} long).`;
+    out.appendChild(n);
   }
   if (c.words && c.words.length) {
     const said = document.createElement('div'); said.className = 'said';
@@ -610,7 +772,92 @@ $('cancel').addEventListener('click', () => { state.stop = true; state.conversio
 $('framing').addEventListener('change', renderClips);
 $('tpl').addEventListener('change', applyTemplate);
 for (const id of ['len', 'count', 'framing', 'mode', 'caps']) $(id).addEventListener('input', () => { $('tpl').value = 'custom'; });
-$('lang').addEventListener('change', () => state.clips.forEach((c) => { c.words = null; }));
+$('lang').addEventListener('change', () => { state.transcript = null; state.clips.forEach((c) => { c.words = null; }); });
+for (const id of ['optJump', 'optZoom', 'optEmoji', 'optHook']) $(id).addEventListener('change', () => { $('tpl').value = 'custom'; });
+
+// ---------- brand kit ----------
+function showBrand() {
+  const b = state.brand;
+  $('accent').value = b.accent; $('font').value = b.font; $('logoPos').value = b.logoPos; $('handle').value = b.handle || '';
+  $('logoPreview').innerHTML = '';
+  if (b.logo) { const im = document.createElement('img'); im.src = b.logo; im.alt = 'Your logo'; $('logoPreview').appendChild(im); }
+  else $('logoPreview').textContent = 'No logo yet';
+  state.logoImg = null;
+  if (b.logo) { const im = new Image(); im.onload = () => { state.logoImg = im; }; im.src = b.logo; }
+}
+function brandChanged() {
+  Object.assign(state.brand, { accent: $('accent').value, font: $('font').value, logoPos: $('logoPos').value, handle: $('handle').value.trim() });
+  F.saveBrand(state.brand);
+}
+for (const id of ['accent', 'font', 'logoPos', 'handle']) $(id).addEventListener('input', brandChanged);
+$('logoFile').addEventListener('change', (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  if (f.size > 1.5e6) { setStatus('That logo is over 1.5 MB. Please use a smaller PNG.'); return; }
+  const r = new FileReader();
+  r.onload = () => { state.brand.logo = r.result; F.saveBrand(state.brand); showBrand(); };
+  r.readAsDataURL(f);
+});
+$('logoClear').addEventListener('click', () => { state.brand.logo = null; F.saveBrand(state.brand); showBrand(); });
+showBrand();
+
+// ---------- repurpose: carousel, thread, description ----------
+function slideCanvas(sl, i, total) {
+  const W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d'); const b = state.brand; const font = F.FONTS[b.font] || F.FONTS.system;
+  const dark = i === 0 || i === total - 1;
+  ctx.fillStyle = dark ? '#111318' : '#f6f4ef'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = b.accent; ctx.fillRect(80, 120, 120, 14);
+  const wrap = (text, size, maxW) => { ctx.font = size; const out = []; let cur = ''; for (const w of String(text).split(/\s+/)) { const n = cur ? cur + ' ' + w : w; if (ctx.measureText(n).width > maxW && cur) { out.push(cur); cur = w; } else cur = n; } if (cur) out.push(cur); return out; };
+  ctx.textBaseline = 'top'; ctx.fillStyle = dark ? '#fff' : '#111318';
+  const tsize = i === 0 ? 96 : 72;
+  const tl = wrap(sl.title || '', `900 ${tsize}px ${font}`, W - 160);
+  tl.forEach((l, k) => ctx.fillText(l, 80, 180 + k * tsize * 1.12));
+  ctx.font = `500 44px ${F.FONTS.system}`; ctx.fillStyle = dark ? '#c9ccd4' : '#3a3d45';
+  const bl = wrap(sl.body || '', `500 44px ${F.FONTS.system}`, W - 160);
+  bl.forEach((l, k) => ctx.fillText(l, 80, 220 + tl.length * tsize * 1.12 + k * 62));
+  ctx.font = `700 34px ${F.FONTS.system}`; ctx.fillStyle = dark ? '#8a93a6' : '#6b6f78';
+  ctx.fillText(`${i + 1} / ${total}`, 80, H - 110);
+  if (b.handle) { ctx.textAlign = 'right'; ctx.fillText(b.handle, W - 80, H - 110); ctx.textAlign = 'left'; }
+  if (state.logoImg) { const h = 90, w = h * state.logoImg.width / state.logoImg.height; ctx.drawImage(state.logoImg, W - 80 - w, 100, w, h); }
+  return cv;
+}
+async function saveFile(name, data) {
+  if (state.dl) { try { await state.dl.save({ filename: name, data }); } catch (e) { if (e?.code !== 'declined') setStatus(`Couldn’t save ${name} (${e?.code || e}).`); } return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data])); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+$('repGo').addEventListener('click', async () => {
+  if (!state.input || state.busy) { setStatus('Choose a video first.'); return; }
+  if (!state.at) { setStatus('This video has no sound, so there is nothing to turn into posts.'); return; }
+  const s = settings(); state.stop = false; setBusy(true);
+  try {
+    if (!state.transcript) state.transcript = await F_transcribeAll(s, (f) => { setProg(f); setStatus(`Listening to everything that’s said… ${Math.round(f * 100)}%`); });
+    setStatus('Writing posts…');
+    const text = state.transcript.map((w) => w.text).join(' ');
+    const r = (await F.aiRepurpose(text, base())) || F.heuristicRepurpose(state.transcript, null);
+    const out = $('repOut'); out.innerHTML = '';
+    const slides = (r.carousel || []).slice(0, 10);
+    const h1 = document.createElement('h3'); h1.textContent = `Carousel (${slides.length} slides, 1080 × 1350)`;
+    const row = document.createElement('div'); row.className = 'slides';
+    const canv = slides.map((sl, i) => slideCanvas(sl, i, slides.length));
+    canv.forEach((cv) => row.appendChild(cv));
+    const sv = document.createElement('button'); sv.className = 'btn sm'; sv.textContent = 'Save slides as PNG';
+    sv.onclick = async () => { for (let i = 0; i < canv.length; i++) { const blob = await new Promise((res) => canv[i].toBlob(res, 'image/png')); await saveFile(`${base()}_slide${i + 1}.png`, blob); } };
+    const box = (title, value) => { const d = document.createElement('div'); const h = document.createElement('h3'); h.textContent = title; const ta = document.createElement('textarea'); ta.value = value; const b = document.createElement('button'); b.className = 'btn sm'; b.textContent = 'Copy'; b.onclick = async () => { try { await navigator.clipboard.writeText(ta.value); b.textContent = 'Copied'; } catch { ta.select(); } }; d.append(h, ta, b); return d; };
+    out.append(h1, row, sv,
+      box('X thread', (r.thread || []).map((t, i) => `${i + 1}/ ${t}`).join('\n\n')),
+      box('YouTube description', r.description || ''));
+    setStatus(await F.aiAvailable() ? 'Posts written by AI from the transcript. Check them before posting.' : 'Posts made from the strongest sentences. Open this page in Claude for AI-written posts.');
+    setProg(1);
+  } catch (e) {
+    setStatus(e.message === 'stopped' ? 'Stopped.' : `Couldn’t make posts: ${e.message || e}`);
+  } finally { setBusy(false); }
+});
+F.aiAvailable().then((ok) => {
+  state.ai = ok;
+  $('aiState').textContent = ok ? 'AI is on: it ranks moments and writes hooks, captions and translations.'
+    : 'AI is off here: moments are ranked by rules. Open the Claude version of this page to turn on AI ranking, hooks and translation.';
+});
 window.addEventListener('resize', drawWave);
 
 // When this page runs inside a claude.ai artifact, downloads go through the viewer's save prompt.
