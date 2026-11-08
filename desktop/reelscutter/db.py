@@ -81,6 +81,15 @@ MIGRATIONS = [
     CREATE TABLE IF NOT EXISTS profiles(
         id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, data TEXT NOT NULL);
     """,
+    """
+    CREATE TABLE IF NOT EXISTS posts(
+        id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, path TEXT NOT NULL, text TEXT NOT NULL DEFAULT '',
+        title TEXT, platforms TEXT NOT NULL, at REAL NOT NULL, status TEXT NOT NULL DEFAULT 'planned',
+        ayr_id TEXT, media_url TEXT, error TEXT, views INTEGER, likes INTEGER, stats TEXT, stats_at REAL,
+        created_at REAL NOT NULL);
+    CREATE INDEX IF NOT EXISTS posts_at ON posts(at);
+    CREATE INDEX IF NOT EXISTS posts_status ON posts(status);
+    """,
 ]
 
 
@@ -177,6 +186,12 @@ DEFAULT_SETTINGS = {
     "onboarded": "0",
     "default_preset": "Reels 9:16 1080p",
     "auto_retry": "1",
+    "ayrshare_api_key": "",
+    "posts_per_day": "6",
+    "post_window_start": "8",
+    "post_window_end": "22",
+    "youtube_visibility": "public",
+    "post_platforms": '["instagram","tiktok","youtube"]',
 }
 
 

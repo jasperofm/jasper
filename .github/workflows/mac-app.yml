@@ -22,6 +22,9 @@ jobs:
       - name: Full pipeline test with real speech recognition (tiny model)
         working-directory: desktop
         run: QT_QPA_PLATFORM=offscreen python tests/test_pipeline.py --speech
+      - name: Auto-posting test (fake Ayrshare)
+        working-directory: desktop
+        run: python tests/test_posting.py
   build:
     needs: test-linux
     strategy:

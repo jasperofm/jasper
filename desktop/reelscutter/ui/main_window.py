@@ -13,6 +13,7 @@ from ..jobs import queue
 from . import theme
 from .analysis_page import AnalysisPage
 from .automation_page import AutomationPage
+from .posting_page import PostingPage
 from .dashboard import Dashboard
 from .dialogs import About, Onboarding
 from .editor import EditorPage
@@ -29,7 +30,7 @@ from .widgets import label
 
 PAGES = [("dashboard", "Dashboard", "◧"), ("library", "Video Library", "▦"), ("analysis", "AI Analysis", "◎"),
          ("generator", "Clip Generator", "✦"), ("editor", "Timeline Editor", "▭"), ("review", "Clip Review Studio", "▣"),
-         ("automation", "Workflow Automation", "↻"), ("export", "Export Manager", "⇪"), ("projects", "Projects", "❏"), ("storage", "Storage Manager", "⛁"),
+         ("automation", "Workflow Automation", "↻"), ("posting", "Auto-Posting", "➚"), ("export", "Export Manager", "⇪"), ("projects", "Projects", "❏"), ("storage", "Storage Manager", "⛁"),
          ("system", "System Monitor", "◔"), ("settings", "Settings", "⚙︎")]
 
 
@@ -112,6 +113,7 @@ class MainWindow(QMainWindow):
         self.presets_page = PresetsPage()
         self.p["export"] = ExportManager(self.queue_page, self.presets_page)
         self.p["automation"] = AutomationPage()
+        self.p["posting"] = PostingPage()
         self.p["projects"] = ProjectsPage()
         self.p["storage"] = StoragePage()
         self.p["system"] = SystemPage()
@@ -219,7 +221,7 @@ class MainWindow(QMainWindow):
         if key == "review":
             self.p["review"].reload_projects()
             self.p["review"].refresh()
-        if key in ("projects", "analysis", "export", "dashboard", "automation") and hasattr(w, "refresh"):
+        if key in ("projects", "analysis", "export", "dashboard", "automation", "posting") and hasattr(w, "refresh"):
             w.refresh()
         if key == "projects":
             w.check_health()

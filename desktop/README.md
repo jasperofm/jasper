@@ -29,6 +29,7 @@ encoders on first launch and starts in **Safe mode**.
 | Clip Generator | 8 strategies (Smart scored, Speech-based, Hybrid, Highlights, Scene, Random, Evenly spread, Manual), clips per video, 15 s – 5 min presets + custom, min/max, spacing, skip intro/outro, pre/post-roll, minimum score, keywords and exclusions, smart reframing, captions, project. Save as production profiles |
 | Timeline Editor | Player (play/pause, frame step, speed, volume, fullscreen, go-to time), zoomable timeline with loudness and scene markers, draggable IN/OUT, saved segments, preview, export selections |
 | Clip Review Studio | Gallery with Ready / Awaiting Review / Approved / Needs Editing / Rejected / Failed QC. Approve, reject, rename, tag, compare with the original, re-edit, regenerate, copy to a folder, CSV/HTML reports. Review is optional |
+| Auto-Posting | Connect your Ayrshare account (API key), pick platforms (Instagram, TikTok, YouTube Shorts, Threads, X, Facebook, LinkedIn), posts per day and posting hours. Approved clips go into a calendar at the best times, with captions and hashtags (AI-written when cloud AI is on), get uploaded and scheduled on Ayrshare (they post even when the Mac is off), and views/likes come back to improve the posting hours |
 | Export Manager | Queue with progress, ETA, pause/resume, cancel, retry, parallel exports; export presets (9:16, 16:9, 1:1, 4:5, original; 720p–4K/source; 24–60 fps/source; H.264/H.265; quality or bitrate; audio bitrate; framing; fades; loudness) |
 | Projects | Group videos and clips, counts and health per project |
 | Storage Manager | Drives (internal/external), export and temp locations, cache limits, cleanup, missing-file detection and relinking |
@@ -45,7 +46,7 @@ encoders on first launch and starts in **Safe mode**.
 
 ### Honest limits (not built yet)
 Speaker diarization, person (body) detection, a multi-track timeline with keyframes/transitions, a word-level
-caption text editor, watch folders and a project health page are not in this version. Face tracking uses
+caption text editor and team accounts are not in this version. Auto-posting needs an Ayrshare plan with API access; it has been tested against a stand-in for the Ayrshare API, not a live account. Face tracking uses
 OpenCV's classic face detector, which works best on clear, front-facing faces.
 Scores rank moments in your own footage; they don't predict views. Choosing different sections or
 re-encoding does not make a clip "new" to any platform's duplicate detection, and the app doesn't try to.
