@@ -34,8 +34,8 @@ def selftest():
         app = QApplication([])
         from .ui.main_window import MainWindow
         w = MainWindow()
-        for key in ("dashboard", "library", "analysis", "generator", "editor", "review", "export", "projects",
-                    "storage", "system", "settings"):
+        from .ui.main_window import PAGES
+        for key in [k for k, _, _ in PAGES]:
             w.go(key)
             app.processEvents()
         print("ui: all pages opened")
@@ -97,6 +97,9 @@ def main():
     if db.setting("onboarded", "0") != "1" and not os.environ.get("REELSCUTTER_NO_ONBOARDING"):
         w.onboarding()
     queue.start()
+    from . import production
+    if db.q1("SELECT COUNT(*) c FROM watch_folders WHERE enabled=1")["c"]:
+        production.watcher.start()
     files = [a for a in sys.argv[1:] if os.path.exists(a)]
     if files:
         w.start_import(files)

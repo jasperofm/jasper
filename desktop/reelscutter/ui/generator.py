@@ -339,14 +339,8 @@ class GeneratorPage(QWidget):
             self.cap_note.setText("")
 
     def build_preset(self, g):
-        p = dict(db.presets()[g["preset"]])
-        p["reframe_mode"] = g["reframe"]
-        p["track_sensitivity"] = g["sensitivity"]
-        p["subtitles"] = g["captions"] in ("burn", "both")
-        p["sidecar_captions"] = g["captions"] in ("both", "files")
-        p["caption_style"] = g["caption_style"]
-        p["caption_position"] = g["caption_position"]
-        return p
+        from ..production import build_preset
+        return build_preset(g)
 
     def run(self):
         db.set_setting("score_keywords", self.keywords.text().strip())

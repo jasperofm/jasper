@@ -12,6 +12,7 @@ from .. import analysis, db, jobs, paths
 from ..jobs import queue
 from . import theme
 from .analysis_page import AnalysisPage
+from .automation_page import AutomationPage
 from .dashboard import Dashboard
 from .dialogs import About, Onboarding
 from .editor import EditorPage
@@ -28,7 +29,7 @@ from .widgets import label
 
 PAGES = [("dashboard", "Dashboard", "◧"), ("library", "Video Library", "▦"), ("analysis", "AI Analysis", "◎"),
          ("generator", "Clip Generator", "✦"), ("editor", "Timeline Editor", "▭"), ("review", "Clip Review Studio", "▣"),
-         ("export", "Export Manager", "⇪"), ("projects", "Projects", "❏"), ("storage", "Storage Manager", "⛁"),
+         ("automation", "Workflow Automation", "↻"), ("export", "Export Manager", "⇪"), ("projects", "Projects", "❏"), ("storage", "Storage Manager", "⛁"),
          ("system", "System Monitor", "◔"), ("settings", "Settings", "⚙︎")]
 
 
@@ -87,8 +88,8 @@ class MainWindow(QMainWindow):
         self.nav.setObjectName("nav")
         for i, (key, name, icon) in enumerate(PAGES):
             it = QListWidgetItem(f"{icon}   {name}")
-            sc = f"⌘{(i + 1) % 10}" if i < 10 else "⌘,"
-            it.setToolTip(f"{name} ({sc})")
+            sc = f" (⌘{(i + 1) % 10})" if i < 10 else " (⌘,)" if key == "settings" else ""
+            it.setToolTip(name + sc)
             self.nav.addItem(it)
         sl.addWidget(self.nav, 1)
         self.side_status = label("", "muted", wrap=True)
@@ -110,6 +111,7 @@ class MainWindow(QMainWindow):
         self.queue_page = QueuePage()
         self.presets_page = PresetsPage()
         self.p["export"] = ExportManager(self.queue_page, self.presets_page)
+        self.p["automation"] = AutomationPage()
         self.p["projects"] = ProjectsPage()
         self.p["storage"] = StoragePage()
         self.p["system"] = SystemPage()
@@ -141,6 +143,8 @@ class MainWindow(QMainWindow):
         self.p["review"].reEdit.connect(self.re_edit)
         self.p["analysis"].openAt.connect(self.open_at)
         self.p["projects"].openProject.connect(self.show_project)
+        self.p["projects"].navigate.connect(self.go)
+        self.p["automation"].navigate.connect(self.go)
         self.p["settings"].showOnboarding.connect(self.onboarding)
         self.p["settings"].showAbout.connect(lambda: About(self).exec())
         self.presets_page.list.currentTextChanged.connect(lambda *_: None)
@@ -215,8 +219,10 @@ class MainWindow(QMainWindow):
         if key == "review":
             self.p["review"].reload_projects()
             self.p["review"].refresh()
-        if key in ("projects", "analysis", "export", "dashboard") and hasattr(w, "refresh"):
+        if key in ("projects", "analysis", "export", "dashboard", "automation") and hasattr(w, "refresh"):
             w.refresh()
+        if key == "projects":
+            w.check_health()
         if key == "editor":
             self.p["editor"].reload_presets()
         if key == "settings":
@@ -374,5 +380,7 @@ class MainWindow(QMainWindow):
                 e.ignore()
                 return
         analysis.runner.cancel_all()
+        from .. import production
+        production.watcher.quit = True
         queue.shutdown()
         e.accept()

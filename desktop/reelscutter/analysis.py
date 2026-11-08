@@ -163,8 +163,9 @@ def analyze_video(vid, modules, cancel=None, progress=lambda msg: None):
             progress(f"transcript {min(100, int(100 * t / v['duration']))}%")
         db.run("UPDATE videos SET transcript=? WHERE id=?", (json.dumps(words, separators=(",", ":")), vid))
         subtitles.unload() if db.setting("model_idle_minutes", "5") == "0" else None
-    level = ("advanced" if {"faces", "quality"} <= set(modules) | done_modules(v) else
-             "standard" if "transcript" in set(modules) | done_modules(v) else "fast")
+    have = done_modules(db.q1(LIGHT + " WHERE id=?", (vid,)))
+    level = ("advanced" if {"transcript", "faces", "quality"} <= have else "standard" if "transcript" in have
+             else "custom" if have & {"faces", "quality"} else "fast")
     db.run("UPDATE videos SET analysis_level=? WHERE id=?", (level, vid))
 
 

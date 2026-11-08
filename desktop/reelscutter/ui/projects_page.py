@@ -5,11 +5,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QInp
 
 from .. import db
 from .tables import RowsModel
-from .widgets import confirm, fmt_dur, fmt_size, label
+from .. import health
+from . import theme
+from .widgets import card, confirm, fmt_dur, fmt_size, label
 
 
 class ProjectsPage(QWidget):
     openProject = Signal(int)
+    navigate = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -43,6 +46,17 @@ class ProjectsPage(QWidget):
         self.view.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.view.setShowGrid(False)
         root.addWidget(self.view, 1)
+        hc, hl = card()
+        hh = QHBoxLayout()
+        hh.addWidget(label("Project health", "h2"))
+        hh.addStretch()
+        self.btn_check = QPushButton("Check now")
+        hh.addWidget(self.btn_check)
+        hl.addLayout(hh)
+        self.health_box = QVBoxLayout()
+        hl.addLayout(self.health_box)
+        root.addWidget(hc)
+        self.btn_check.clicked.connect(self.check_health)
         root.addWidget(label("Deleting a project only removes the grouping: its videos move to “Default”, and no "
                              "files are deleted.", "muted", wrap=True))
         self.btn_new.clicked.connect(self.new)
@@ -51,6 +65,7 @@ class ProjectsPage(QWidget):
         self.btn_open.clicked.connect(lambda: self.cur() and self.openProject.emit(self.cur()["id"]))
         self.view.doubleClicked.connect(lambda i: self.openProject.emit(self.model.rows[i.row()]["id"]))
         self.refresh()
+        self.check_health()
 
     def cur(self):
         rows = self.view.selectionModel().selectedRows()
@@ -98,3 +113,40 @@ class ProjectsPage(QWidget):
             db.run("UPDATE batches SET project_id=? WHERE project_id=?", (d, r["id"]))
             db.run("DELETE FROM projects WHERE id=?", (r["id"],))
             self.refresh()
+
+    def check_health(self):
+        while self.health_box.count():
+            it = self.health_box.takeAt(0)
+            lay = it.layout()
+            if lay:
+                while lay.count():
+                    w = lay.takeAt(0).widget()
+                    if w:
+                        w.deleteLater()
+            elif it.widget():
+                it.widget().deleteLater()
+        colors = {"ok": theme.GOOD, "warn": theme.WARN, "error": theme.BAD}
+        for item in health.checks():
+            row = QHBoxLayout()
+            dot = label("●")
+            dot.setStyleSheet(f"color:{colors[item['level']]};")
+            row.addWidget(dot)
+            txt = label(f"<b>{item['title']}</b>" + (f"  <span style='color:{theme.MUTED}'>{item['detail']}</span>"
+                                                     if item["detail"] else ""), wrap=True)
+            row.addWidget(txt, 1)
+            if item.get("fix"):
+                b = QPushButton(item["fix_label"])
+                b.clicked.connect(lambda _=False, it=item: self._fix(it))
+                row.addWidget(b)
+            self.health_box.addLayout(row)
+
+    def _fix(self, item):
+        if item["fix"] in ("storage", "review"):
+            self.navigate.emit(item["fix"])
+            return
+        if item["fix"] == "clean_parts" and not confirm(self, "Delete incomplete files",
+                                                        f"Delete {len(item['data'])} incomplete .part.mp4 file(s)?"):
+            return
+        health.fix(item)
+        self.check_health()
+        self.refresh()

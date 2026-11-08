@@ -67,6 +67,7 @@ class Importer(threading.Thread):
         self.project_id = db.project_id(project)
         self.stop = False
         self.stats = dict(found=0, added=0, duplicates=0, skipped=0, failed=0)
+        self.added_ids = []
 
     def _files(self):
         for s in self.sources:
@@ -127,6 +128,7 @@ class Importer(threading.Thread):
         except Exception as e:
             db.log("warning", f"No thumbnail for {f.name}: {e}")
         self.stats["added"] += 1
+        self.added_ids.append(vid)
 
 
 # ---------------------------------------------------------------- queue
@@ -189,7 +191,7 @@ class Queue:
         for r in db.q("SELECT id,out_path FROM jobs WHERE status='running'"):
             if r["out_path"]:
                 Path(r["out_path"] + ".part.mp4").unlink(missing_ok=True)
-        n = db.run("UPDATE jobs SET status='queued', progress=0 WHERE status='running'")
+        db.run("UPDATE jobs SET status='queued', progress=0 WHERE status='running'")
         db.run("UPDATE batch_videos SET state='pending' WHERE state='planning'")
         db.run("UPDATE videos SET status='queued' WHERE status IN ('processing','analyzing')")
         for tmp in {paths.data_dir() / "tmp", hardware.temp_dir()}:   # only runs before any worker starts
@@ -236,7 +238,7 @@ class Queue:
         events.emit("queue_changed")
 
     def retry_all_failed(self):
-        ids = [r["id"] for r in db.q("SELECT id FROM jobs WHERE status='failed'")]
+        ids = [r["id"] for r in db.q("SELECT id FROM jobs WHERE status='failed' AND review!='failed_qc'")]
         self.retry(ids)
         return len(ids)
 
