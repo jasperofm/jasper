@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reels Cutter — turn long videos into short clips on your Mac</title>
+<meta name="description" content="Reels Cutter finds the best moments in your long videos and turns them into finished vertical clips with captions. Runs on your Mac. Free.">
+<link rel="icon" href="img/icon.png">
+<style>
+  :root{--bg:#0f1115;--panel:#161a21;--panel2:#1d222b;--border:#262c37;--text:#e8eaef;--muted:#8a93a6;--a1:#ff4f6d;--a2:#ff8a5c;--good:#3ecf8e}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+  nav{display:flex;align-items:center;justify-content:space-between;padding:18px 0}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;text-decoration:none}
+  .brand img{width:32px;height:32px}
+  nav .links a{color:var(--muted);text-decoration:none;margin-left:22px;font-size:15px}
+  nav .links a:hover{color:var(--text)}
+  .hero{text-align:center;padding:64px 0 40px}
+  .hero img.logo{width:112px;height:112px;filter:drop-shadow(0 20px 40px rgba(255,79,109,.25))}
+  h1{font-size:clamp(34px,6vw,60px);line-height:1.08;margin:18px 0 14px;letter-spacing:-.02em}
+  .grad{background:linear-gradient(90deg,var(--a1),var(--a2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{color:var(--muted);font-size:clamp(17px,2.2vw,20px);max-width:700px;margin:0 auto 30px}
+  .btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-flex;flex-direction:column;align-items:center;padding:14px 26px;border-radius:12px;text-decoration:none;font-weight:600;border:1px solid var(--border);background:var(--panel2);min-width:230px;transition:transform .15s,border-color .15s}
+  .btn small{font-weight:400;color:var(--muted);font-size:13px}
+  .btn.primary{background:linear-gradient(90deg,var(--a1),var(--a2));border:none;color:#fff}
+  .btn.primary small{color:rgba(255,255,255,.85)}
+  .btn:hover{transform:translateY(-2px);border-color:#3a4352}
+  .note{color:var(--muted);font-size:14px;margin-top:14px}
+  .shot{margin:46px auto 0;border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.55);max-width:1080px}
+  .shot img{display:block;width:100%;height:auto}
+  section{padding:70px 0 10px}
+  h2{font-size:clamp(26px,4vw,36px);margin:0 0 10px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 30px;max-width:720px}
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px}
+  .card h3{margin:6px 0 6px;font-size:18px}
+  .card p{margin:0;color:var(--muted);font-size:15px}
+  .num{display:inline-flex;width:30px;height:30px;border-radius:9px;align-items:center;justify-content:center;font-weight:700;background:linear-gradient(135deg,var(--a1),var(--a2));color:#fff;font-size:15px}
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+  .ico{font-size:22px}
+  .gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+  .gallery figure{margin:0;background:var(--panel);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .gallery img{display:block;width:100%;height:auto}
+  .gallery figcaption{padding:12px 16px;color:var(--muted);font-size:14px}
+  .install ol{margin:0;padding-left:20px;color:var(--muted)}
+  .install li{margin:6px 0}
+  .install b{color:var(--text)}
+  details{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:10px}
+  summary{cursor:pointer;font-weight:600}
+  details p{color:var(--muted);margin:10px 0 0}
+  .cta{text-align:center;padding:80px 0}
+  footer{border-top:1px solid var(--border);color:var(--muted);font-size:14px;padding:26px 0 40px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  @media (max-width:640px){nav .links{display:none}.btn{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#"><img src="img/icon.png" alt="">Reels Cutter</a>
+    <div class="links"><a href="#how">How it works</a><a href="#features">Features</a><a href="#install">Install</a><a href="#faq">FAQ</a></div>
+  </nav>
+
+  <header class="hero">
+    <img class="logo" src="img/icon.png" alt="Reels Cutter app icon">
+    <h1>Long videos in.<br><span class="grad">Ready-to-post clips out.</span></h1>
+    <p class="lead">Reels Cutter finds the best moments in your podcasts, streams and vlogs and turns them into finished vertical clips with captions, automatically, right on your Mac.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/jasperofm/jasper/releases/download/desktop-latest/ReelsCutter-1.0.0-macOS-x86_64.dmg">Download for Intel Mac<small>macOS 12 or newer · free</small></a>
+      <a class="btn" href="https://github.com/jasperofm/jasper/releases/download/desktop-latest/ReelsCutter-1.0.0-macOS-arm64.dmg">Download for Apple Silicon<small>M1, M2, M3, M4</small></a>
+    </div>
+    <p class="note">Not sure which Mac you have? Apple menu → About This Mac. "Intel" or "Apple M…".</p>
+    <div class="shot"><img src="img/dashboard.png" alt="Reels Cutter dashboard" loading="lazy"></div>
+  </header>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <p class="sub">Set it up once, press start, and let it run. Every step happens on your computer.</p>
+    <div class="steps">
+      <div class="card"><span class="num">1</span><h3>Import</h3><p>Drag videos or whole folders onto the window, or set a watch folder that picks up new videos by itself.</p></div>
+      <div class="card"><span class="num">2</span><h3>Choose</h3><p>Pick clip lengths (15 s to 5 min), how many per video, the format and caption style. Save it as a profile.</p></div>
+      <div class="card"><span class="num">3</span><h3>Generate</h3><p>Reels Cutter analyzes, picks the strongest moments, frames faces, adds captions and exports.</p></div>
+      <div class="card"><span class="num">4</span><h3>Post</h3><p>Every clip is quality-checked. Find them in the review studio or straight in your output folder.</p></div>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>Everything a clipping workflow needs</h2>
+    <p class="sub">Built for creators with lots of footage and a normal laptop.</p>
+    <div class="features">
+      <div class="card"><div class="ico">✦</div><h3>Smart moment picking</h3><p>Scores candidate clips on speech, energy, strong openings, scene changes and your keywords, and explains every pick. Ends clips at natural pauses, never mid-word.</p></div>
+      <div class="card"><div class="ico">◎</div><h3>Face-following vertical crop</h3><p>Turns wide videos into 9:16, 1:1 or 4:5 and keeps the speaker in frame with smooth, adjustable tracking.</p></div>
+      <div class="card"><div class="ico">Aa</div><h3>Automatic captions</h3><p>Local speech recognition with word-by-word highlighted captions burned in, plus .srt and .vtt files.</p></div>
+      <div class="card"><div class="ico">✓</div><h3>Quality checks and auto-repair</h3><p>Checks every clip for broken files, wrong size, missing audio, black or frozen video. Fixes what it can, and sets aside what it can't.</p></div>
+      <div class="card"><div class="ico">▦</div><h3>Huge libraries</h3><p>Handles 10,000+ videos with search, filters, duplicate detection, projects and external SSD support.</p></div>
+      <div class="card"><div class="ico">⇪</div><h3>Pro export</h3><p>720p to 4K, 24 to 60 fps, H.264 or H.265, quality or bitrate control, loudness normalization and custom presets.</p></div>
+      <div class="card"><div class="ico">↻</div><h3>Set and forget</h3><p>Background queue with pause and resume, scheduling, crash recovery and automatic retries. Quit any time, nothing is lost.</p></div>
+      <div class="card"><div class="ico">◔</div><h3>Made for your Mac</h3><p>Detects your processor, memory and hardware encoders, benchmarks your machine and picks safe settings, including on older Intel Macs.</p></div>
+      <div class="card"><div class="ico">🔒</div><h3>Private by default</h3><p>Your videos never leave your computer. No account, no subscription, no uploads. Your originals are never changed.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>A look inside</h2>
+    <div class="gallery">
+      <figure><img src="img/generator.png" alt="Clip Generator" loading="lazy"><figcaption>Clip Generator: set it up once, save it as a profile.</figcaption></figure>
+      <figure><img src="img/review.png" alt="Clip Review Studio" loading="lazy"><figcaption>Clip Review Studio: preview, compare with the original, approve or tag.</figcaption></figure>
+      <figure><img src="img/analysis.png" alt="AI Analysis" loading="lazy"><figcaption>AI Analysis: scenes, speech, faces and quality, all local.</figcaption></figure>
+    </div>
+  </section>
+
+  <section id="install" class="install">
+    <h2>Install in a minute</h2>
+    <div class="card">
+      <ol>
+        <li><b>Download</b> the version for your Mac above.</li>
+        <li><b>Open the .dmg</b> and drag Reels Cutter into Applications.</li>
+        <li>The first time you open it, macOS says it can't check the app for malicious software. That happens with apps that aren't sold through Apple. Click <b>OK</b>.</li>
+        <li>Open <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b> next to "Reels Cutter was blocked". Enter your password and click <b>Open</b>.</li>
+        <li>That's it. From now on it opens like any other app.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2>Questions</h2>
+    <details><summary>Is it free?</summary><p>Yes. No account or subscription. Everything runs on your Mac.</p></details>
+    <details><summary>Do my videos get uploaded anywhere?</summary><p>No. Analysis, speech recognition and exporting all happen on your computer. There's an optional, off-by-default cloud ranking feature that only sends short transcript text, and only if you turn it on with your own API key.</p></details>
+    <details><summary>Which Macs does it run on?</summary><p>Intel and Apple Silicon Macs with macOS 12 Monterey or newer. On first launch it detects your hardware and starts in a safe, low-memory mode.</p></details>
+    <details><summary>Does it work offline?</summary><p>Yes. The only download is the optional speech model for captions, and the app asks before downloading it.</p></details>
+    <details><summary>What videos can I use?</summary><p>MP4, MOV, MKV, AVI, WebM, M4V and more. Use footage you own or have the rights to publish.</p></details>
+  </section>
+
+  <div class="cta">
+    <h2>Start clipping today</h2>
+    <p class="sub" style="margin:0 auto 26px">Free for Mac. Takes a minute to install.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/jasperofm/jasper/releases/download/desktop-latest/ReelsCutter-1.0.0-macOS-x86_64.dmg">Download for Intel Mac<small>.dmg · about 220 MB</small></a>
+      <a class="btn" href="https://github.com/jasperofm/jasper/releases/download/desktop-latest/ReelsCutter-1.0.0-macOS-arm64.dmg">Download for Apple Silicon<small>.dmg · about 190 MB</small></a>
+    </div>
+  </div>
+
+  <footer>
+    <span>© 2026 Reels Cutter · Version 1.0.0</span>
+    <span>Made with FFmpeg, Qt and Whisper · <a href="https://github.com/jasperofm/jasper">Source on GitHub</a></span>
+  </footer>
+</div>
+</body>
+</html>
