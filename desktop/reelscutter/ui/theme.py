@@ -1,9 +1,9 @@
 """Dark theme (colours + Qt stylesheet)."""
 
-BG = "#0f1115"
-PANEL = "#161a21"
-PANEL2 = "#1d222b"
-BORDER = "#262c37"
+BG = "#0c0e13"
+PANEL = "#14171f"
+PANEL2 = "#1c2029"
+BORDER = "#252a35"
 TEXT = "#e8eaef"
 MUTED = "#8a93a6"
 ACCENT = "#ff4f6d"
@@ -71,4 +71,23 @@ QMenu {{ background: {PANEL2}; border: 1px solid {BORDER}; padding: 4px; }}
 QMenu::item {{ padding: 6px 18px; border-radius: 6px; }}
 QMenu::item:selected {{ background: {ACCENT}; }}
 QSplitter::handle {{ background: {BG}; }}
+QLabel#h1 {{ font-size: 26px; font-weight: 800; letter-spacing: -0.3px; }}
+QFrame#card {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #161a23, stop:1 {PANEL}); border: 1px solid {BORDER};
+    border-radius: 14px; }}
+QFrame#sidebar {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #151924, stop:1 #10131a);
+    border-right: 1px solid {BORDER}; }}
+QListWidget#nav::item {{ padding: 9px 14px; margin: 1px 10px; border-radius: 9px; }}
+QListWidget#nav::item:selected {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #2a1d24, stop:1 {PANEL2});
+    color: {TEXT}; border-left: 3px solid {ACCENT}; font-weight: 600; }}
+QListWidget::item {{ padding: 6px 8px; border-radius: 8px; }}
+QListWidget::item:selected {{ background: #262c3a; color: {TEXT}; }}
+QListWidget::item:hover {{ background: #1f2430; }}
+QTableView::item {{ padding: 4px 6px; }}
+QTableView::item:selected {{ background: #262c3a; }}
+QPushButton {{ font-weight: 500; }}
+QPushButton#chip {{ background: transparent; border: 1px solid #343b4a; border-radius: 15px; padding: 5px 13px;
+    color: {MUTED}; }}
+QPushButton#chip:hover {{ border-color: {ACCENT}; color: {TEXT}; background: #1f1a20; }}
+QTextBrowser#chat {{ background: transparent; border: none; font-size: 14px; }}
+QStatusBar {{ background: {PANEL}; color: {MUTED}; border-top: 1px solid {BORDER}; }}
 """

@@ -14,6 +14,7 @@ from . import theme
 from .analysis_page import AnalysisPage
 from .automation_page import AutomationPage
 from .autopilot_page import AutopilotPage
+from .bot_page import BotPage
 from .posting_page import PostingPage
 from .dashboard import Dashboard
 from .dialogs import About, Onboarding
@@ -29,7 +30,7 @@ from .storage_page import StoragePage
 from .system_page import SystemPage
 from .widgets import label
 
-PAGES = [("dashboard", "Dashboard", "◧"), ("autopilot", "Autopilot", "⚡"), ("library", "Video Library", "▦"), ("analysis", "AI Analysis", "◎"),
+PAGES = [("dashboard", "Dashboard", "◧"), ("bot", "Jasper Bot", "✺"), ("autopilot", "Autopilot", "⚡"), ("library", "Video Library", "▦"), ("analysis", "AI Analysis", "◎"),
          ("generator", "Clip Generator", "✦"), ("editor", "Timeline Editor", "▭"), ("review", "Clip Review Studio", "▣"),
          ("automation", "Workflow Automation", "↻"), ("posting", "Auto-Posting", "➚"), ("export", "Export Manager", "⇪"), ("projects", "Projects", "❏"), ("storage", "Storage Manager", "⛁"),
          ("system", "System Monitor", "◔"), ("settings", "Settings", "⚙︎")]
@@ -113,6 +114,7 @@ class MainWindow(QMainWindow):
         self.queue_page = QueuePage()
         self.presets_page = PresetsPage()
         self.p["export"] = ExportManager(self.queue_page, self.presets_page)
+        self.p["bot"] = BotPage()
         self.p["autopilot"] = AutopilotPage()
         self.p["automation"] = AutomationPage()
         self.p["posting"] = PostingPage()
@@ -150,6 +152,7 @@ class MainWindow(QMainWindow):
         self.p["projects"].navigate.connect(self.go)
         self.p["automation"].navigate.connect(self.go)
         self.p["autopilot"].navigate.connect(self.go)
+        self.p["bot"].navigate.connect(self.go)
         self.p["autopilot"].reEdit.connect(self.re_edit)
         self.p["settings"].showOnboarding.connect(self.onboarding)
         self.p["settings"].showAbout.connect(lambda: About(self).exec())
@@ -225,7 +228,7 @@ class MainWindow(QMainWindow):
         if key == "review":
             self.p["review"].reload_projects()
             self.p["review"].refresh()
-        if key in ("projects", "analysis", "export", "dashboard", "automation", "posting", "autopilot") and hasattr(w, "refresh"):
+        if key in ("projects", "analysis", "export", "dashboard", "automation", "posting", "autopilot", "bot") and hasattr(w, "refresh"):
             w.refresh()
         if key == "projects":
             w.check_health()
