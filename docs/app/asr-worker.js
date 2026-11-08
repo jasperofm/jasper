@@ -1,7 +1,7 @@
 // Speech recognition worker: runs Whisper (ONNX) inside the browser. Audio never leaves the computer.
 // The library ships next to the page when hosted as a bundle; otherwise it comes from the jsDelivr CDN.
-const { pipeline, env } = await import('./vendor/transformers.min.js')
-  .catch(() => import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1/dist/transformers.min.js'));
+// Loaded inside setup() so the message handler below is registered before any await.
+let pipeline, env;
 
 const MODEL = 'onnx-community/whisper-base_timestamped';
 let manifest = null;        // present when the model files are hosted next to the page (split into parts)
@@ -28,6 +28,8 @@ async function localFile(key, opts = {}) {
 }
 
 async function setup() {
+  ({ pipeline, env } = await import('./vendor/transformers.min.js')
+    .catch(() => import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1/dist/transformers.min.js')));
   try {
     const r = await realFetch(new URL('models/manifest.json', base));
     if (r.ok) manifest = await r.json();
