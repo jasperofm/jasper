@@ -210,6 +210,11 @@ def _pick_scored(cands, analysis, transcript, s, chosen, add, label):
 
 def select(duration, analysis, s: SelectionSettings, used=(), manual=(), transcript=None):
     """Return a list of (start, end, reason) for one video."""
+    if duration and 3.0 <= duration < s.min_len + 1.0 and not used and s.mode != "manual":
+        # Video shorter than the clip settings allow: make one clip from (almost) the whole video instead of none.
+        import dataclasses
+        s = dataclasses.replace(s, min_len=max(3.0, duration * 0.6), max_len=duration,
+                                durations=[max(3.0, duration * 0.9)], clips_per_video=1)
     rng = random.Random(s.seed)
     regions = usable_regions(duration, analysis, s, used)
     targets = [_clamp_len(float(t), s) for t in (s.durations or [30.0])]

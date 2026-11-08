@@ -47,9 +47,53 @@ def selftest():
     return 0 if r["ok"] else 1
 
 
+def playtest(path=None):
+    """Checks that the built-in video player can decode and show frames (python -m reelscutter --playtest [file])."""
+    import subprocess
+    import tempfile
+    from PySide6.QtCore import QCoreApplication, QTimer, QUrl
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtMultimedia import QMediaFormat, QMediaPlayer, QVideoSink
+    from . import paths
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    if not path:
+        path = os.path.join(tempfile.mkdtemp(), "play.mp4")
+        subprocess.run([paths.ffmpeg(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=4", "-f",
+                        "lavfi", "-i", "sine=d=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                        "-shortest", path], check=True)
+    app = QGuiApplication.instance() or QGuiApplication([])
+    print("qt plugins:", QCoreApplication.libraryPaths())
+    print("decoders:", [f.name for f in QMediaFormat().supportedVideoCodecs(QMediaFormat.Decode)])
+    pl = QMediaPlayer()
+    sink = QVideoSink()
+    pl.setVideoOutput(sink)
+    got = {"frames": 0, "size": None, "errors": [], "status": []}
+
+    def frame(f):
+        got["frames"] += 1
+        got["size"] = (f.width(), f.height())
+    sink.videoFrameChanged.connect(frame)
+    pl.errorOccurred.connect(lambda e, m: got["errors"].append(f"{e}: {m}"))
+    pl.mediaStatusChanged.connect(lambda st: got["status"].append(str(st).split(".")[-1]))
+    pl.setSource(QUrl.fromLocalFile(str(path)))
+    pl.play()
+    QTimer.singleShot(5000, app.quit)
+    app.exec()
+    print("file:", path)
+    print("duration ms:", pl.duration(), "has video:", pl.hasVideo(), "has audio:", pl.hasAudio())
+    print("status:", got["status"], "errors:", got["errors"])
+    print("frames shown:", got["frames"], "size:", got["size"])
+    ok = got["frames"] > 0 and not got["errors"]
+    print("PLAYER OK" if ok else "PLAYER BROKEN")
+    return 0 if ok else 1
+
+
 def main():
     if "--selftest" in sys.argv:
         return selftest()
+    if "--playtest" in sys.argv:
+        i = sys.argv.index("--playtest")
+        return playtest(sys.argv[i + 1] if len(sys.argv) > i + 1 else None)
     from . import paths
     log_dir = paths.data_dir() / "logs"
     try:

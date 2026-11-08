@@ -113,7 +113,9 @@ def steps(v):
     elif jobs:
         out.append(("Picking best parts", "done", f"{len(jobs)} part(s) picked"))
     else:
-        out.append(("Picking best parts", "done" if bvs else "waiting", v["error"] or "Nothing usable found"))
+        out.append(("Picking best parts", "failed" if bvs and v["status"] == "done" else "waiting",
+                    (v["error"] or "No usable part found") + (" (video is very short)" if (v["duration"] or 0) < 3
+                                                              else "")))
 
     done = sum(j["status"] == "done" for j in jobs)
     failed = sum(j["status"] == "failed" for j in jobs)

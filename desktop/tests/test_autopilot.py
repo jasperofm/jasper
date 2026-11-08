@@ -160,3 +160,9 @@ srv.RequestHandlerClass = Del
 posting.cancel(p["id"])
 assert sorted(c[2]["id"] for c in calls if c[0] == "DELETE") == sorted([p["ayr_id"], p["reddit_id"]]), calls
 print("autopilot test passed")
+
+# a video shorter than the minimum clip length still gives one clip instead of none
+for mode in ("smart", "highlight", "random", "time"):
+    got = selection.select(9.9, None, selection.SelectionSettings(mode=mode, min_len=10, durations=[30]))
+    assert len(got) == 1 and got[0][1] - got[0][0] >= 5, (mode, got)
+print("short video ok")
